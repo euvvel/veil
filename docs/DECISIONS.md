@@ -1,0 +1,31 @@
+# Decisions
+
+Short records of decisions that shape the project. Newest at the bottom.
+
+### D1 · Runner on GitHub Actions (2026-10-11)
+- **Decision:** host the runner on GitHub Actions, using a second GitHub account and a public repo.
+- **Context:** free unlimited minutes for public repos. The owner knowingly accepts the risk that GitHub's terms on Actions usage could get the account banned. This is a test phase before buying a VPS.
+- **Consequence:** the runner must be host-agnostic (`runner/start.sh` + env vars) so moving to a VPS changes only the doorbell. Public logs force strict log hygiene.
+
+### D2 · Local Telegram Bot API server on the runner (2026-10-11)
+- **Decision:** run `telegram-bot-api` on the runner.
+- **Context:** the cloud Bot API caps uploads at 50 MB, while a local server allows up to 2,000 MB. Lossless tracks and hi-res files often exceed 50 MB.
+- **Consequence:** needs `api_id`/`api_hash` from my.telegram.org and adds boot time (🧪). This led to D3.
+
+### D3 · Two bots: veil (front) and courier (delivery) (2026-10-11)
+- **Decision:** use one bot per Bot API server.
+- **Context:** a bot must `logOut` from the cloud before running on a local server and can't return to the cloud for 10 minutes. The front bot needs to stay on the cloud with a webhook. A second bot avoids the conflict.
+- **Consequence:** each user starts courier once. Revisit if the spike shows a single bot can safely do both.
+
+### D4 · Metadata sources: MusicBrainz + ListenBrainz only (2026-10-11)
+- **Decision:** use MusicBrainz and ListenBrainz only. No Last.fm, so no third-party API key.
+- **Rule:** every suggestion must carry an MBID that we fetched ourselves. Workers AI only ranks and writes reasons.
+
+### D5 · Format chosen per search, with size awareness (2026-10-11)
+- **Decision:** a `FLAC · MP3 · Any` toggle per search, with prefs `format=flac`, `max_mb=150`, `fallback=true`.
+- **Delivery:** FLAC via `sendDocument`, MP3/M4A via `sendAudio`. Never transcode.
+
+### D6 · Single Hub Durable Object (2026-10-11)
+- **Decision:** one DO instance.
+- **Context:** there is one runner and two users. A single DO is the session state, the WS hub, and the job pump.
+- **Consequence:** with more runners later, this splits into one Hub per runner.
