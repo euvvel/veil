@@ -7,6 +7,7 @@ import { safeEqual } from "./crypto.ts";
 import { hub, type Env } from "./env.ts";
 import { validateInitData } from "./initdata.ts";
 import { activeMember, memberKey, type Member } from "./members.ts";
+import { tgCall } from "./telegram.ts";
 
 export { Hub } from "./hub.ts";
 
@@ -21,7 +22,17 @@ app.post("/tg/webhook", async (c) => {
   const secret = c.req.header("X-Telegram-Bot-Api-Secret-Token") ?? "";
   if (!safeEqual(secret, c.env.WEBHOOK_SECRET)) return notFound();
   const update = await c.req.json<TgUpdate>();
-  return handleUpdate(c.env, update, (p) => c.executionCtx.waitUntil(p));
+  const res = await handleUpdate(c.env, update, (p) => c.executionCtx.waitUntil(p));
+  if (c.env.REPLY_MODE === "webhook") return res;
+
+  // Webhook-response replies give no delivery result, so send explicitly and log the outcome (no ids).
+  const text = await res.text();
+  if (text) {
+    const { method, ...body } = JSON.parse(text) as { method: string };
+    const r = await tgCall(c.env.VEIL_BOT_TOKEN, method, body);
+    console.log(JSON.stringify({ at: "reply", method, ok: r.ok, error: r.ok ? undefined : r.description }));
+  }
+  return new Response(null, { status: 200 });
 });
 
 app.get("/hub/runner", async (c) => {

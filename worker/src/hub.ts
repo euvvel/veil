@@ -231,6 +231,9 @@ export class Hub extends DurableObject<Env> {
       const items = (await this.ctx.storage.get<Item[]>(`v:${sid}`)) ?? [];
       const item = items[Number(arg)];
       if (!item) return { reply: answer("That result has faded. Seek again.") };
+      const limit = ((await this.load()).maxUploadMb ?? DEFAULT_UPLOAD_MB) * 1024 * 1024;
+      if (item.kind === "t" && item.size > limit) return { reply: answer("Too large for now. Pick a smaller file or MP3.") };
+      if (item.kind === "a" && item.files.every((f) => f.size > limit)) return { reply: answer("Every file here is too large for now.") };
       await this.cross(member, chatId, rec, item);
       return { reply: answer("Let it cross.") };
     }
@@ -241,11 +244,12 @@ export class Hub extends DurableObject<Env> {
 
   private async cross(member: Member, chatId: number, rec: SearchRec, item: Item): Promise<void> {
     const now = Date.now();
+    const limit = ((await this.load()).maxUploadMb ?? DEFAULT_UPLOAD_MB) * 1024 * 1024;
     const gid = randomHex(6);
     const files =
       item.kind === "t"
         ? [{ path: item.path, size: item.size, ext: item.ext, br: item.br }]
-        : item.files.map((f) => ({ ...f, br: null as number | null }));
+        : item.files.filter((f) => f.size <= limit).map((f) => ({ ...f, br: null as number | null }));
     const name = item.kind === "t" ? basename(item.path) : dirname(item.d + "/x");
     const jobs = files.map((f) => ({ id: randomHex(8), ...f }));
 

@@ -9,6 +9,9 @@ export interface Env {
   GH_REPO: string;
   GH_WORKFLOW: string;
   GH_REF: string;
+  /** "api" (default): replies are sent with an explicit Bot API call and the result is logged.
+   *  "webhook": replies ride on the webhook response (local tests read them there). */
+  REPLY_MODE?: string;
 
   VEIL_BOT_TOKEN: string;
   WEBHOOK_SECRET: string;

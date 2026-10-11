@@ -110,6 +110,7 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
 
   if (update.callback_query) {
     const cq = update.callback_query;
+    console.log(JSON.stringify({ at: "update", kind: "callback", op: (cq.data ?? "").split(":")[0] }));
     const me = await M.activeMember(env.DB, await M.memberKey(env.MEMBER_HMAC_KEY, cq.from.id));
     if (!me) return silence();
     if (cq.data?.startsWith("s:") && cq.message) {
@@ -136,6 +137,7 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
   const rest = text.slice(cmdRaw.length).trim();
   const arg = rest.split(/\s+/, 1)[0] ?? "";
   const cmd = cmdRaw.replace(/@.*$/, "").toLowerCase();
+  console.log(JSON.stringify({ at: "update", kind: "message", cmd: cmd.startsWith("/") ? cmd.slice(0, 16) : "(text)" }));
 
   let member = await M.activeMember(env.DB, key);
 
