@@ -1,7 +1,8 @@
 name: runner
 
 # Started by the Worker's doorbell (workflow_dispatch with return_run_details).
-# Phase 2: Hub smoke only. Phase 3 adds slskd and courier delivery.
+# slskd + veil agent: search, download, deliver through courier, delete, repeat; drains after 20 min idle.
+# Public repo: every step prints counts and states only.
 on:
   workflow_dispatch:
     inputs:
@@ -17,10 +18,13 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  SLSKD_IMAGE: slskd/slskd@sha256:588af49abc3088d639c8f1174d3bfad6e92c093a275a593140e3ac9311ebf6c4 # 0.26.1
+
 jobs:
   runner:
     runs-on: ubuntu-latest
-    timeout-minutes: 340 # 5 h 40 m; GitHub kills jobs at 6 h
+    timeout-minutes: 345 # agent drains at 5 h 30 m; GitHub kills jobs at 6 h
     steps:
       - uses: actions/checkout@v4
 
@@ -28,13 +32,56 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install
-        run: pip install -q websockets==17.1
+      - name: Install agent
+        run: pip install -q httpx==0.28.1 websockets==17.1 mutagen==1.48.1
 
-      - name: Hub smoke
+      - name: Start slskd
+        env:
+          SLSK_USERNAME: ${{ secrets.SLSK_USERNAME }}
+          SLSK_PASSWORD: ${{ secrets.SLSK_PASSWORD }}
+        run: |
+          key=$(head -c 24 /dev/urandom | base64 | tr -dc A-Za-z0-9)
+          echo "::add-mask::$key"
+          echo "SLSKD_API_KEY=$key" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/dl"
+          umask 077
+          {
+            echo "SLSKD_SLSK_USERNAME=$SLSK_USERNAME"
+            echo "SLSKD_SLSK_PASSWORD=$SLSK_PASSWORD"
+            echo "SLSKD_API_KEY=$key"
+            echo "SLSKD_NO_HTTPS=true"
+            echo "SLSKD_NO_VERSION_CHECK=true"
+            echo "SLSKD_SLSK_NO_DNET=true"
+            echo "SLSKD_DOWNLOADS_DIR=/downloads"
+          } > "$RUNNER_TEMP/slskd.env"
+          docker pull -q "$SLSKD_IMAGE" >/dev/null
+          docker run -d --name slskd -p 127.0.0.1:5030:5030 \
+            --env-file "$RUNNER_TEMP/slskd.env" -v "$RUNNER_TEMP/dl:/downloads" "$SLSKD_IMAGE" >/dev/null
+          rm -f "$RUNNER_TEMP/slskd.env"
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null -H "X-API-Key: $key" http://127.0.0.1:5030/api/v0/application && break
+            sleep 1
+          done
+          echo "[runner] slskd api up"
+
+      - name: Run agent
+        working-directory: runner
         env:
           HUB_URL: ${{ secrets.HUB_URL }}
           RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          COURIER_BOT_TOKEN: ${{ secrets.COURIER_BOT_TOKEN }}
           SESSION_ID: ${{ inputs.session_id }}
-          STAY_S: "300"
-        run: python runner/hub_smoke.py
+          DL_DIR: ${{ runner.temp }}/dl
+          DELETE_CMD: sudo rm -f
+          IDLE_S: "1200"
+          MAX_S: "19800"
+          MAX_UPLOAD_MB: "50"
+        run: python -m agent
+
+      - name: Stop slskd and leave nothing behind
+        if: always()
+        run: |
+          docker stop -t 20 slskd >/dev/null 2>&1 || true
+          docker rm -f slskd >/dev/null 2>&1 || true
+          sudo rm -rf "$RUNNER_TEMP/dl"
+          echo "[runner] closed"

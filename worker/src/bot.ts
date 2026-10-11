@@ -5,6 +5,7 @@
 import type { Env } from "./env.ts";
 import { hub } from "./env.ts";
 import * as M from "./members.ts";
+import type { Fmt } from "./protocol.ts";
 import { label } from "./words.ts";
 
 interface TgMessage {
@@ -17,6 +18,7 @@ interface TgCallback {
   id: string;
   from: { id: number };
   data?: string;
+  message?: { message_id: number; chat: { id: number } };
 }
 export interface TgUpdate {
   update_id: number;
@@ -40,18 +42,57 @@ export async function tg(env: Env, method: string, body: unknown): Promise<Respo
   });
 }
 
+const SEEK = { command: "seek", description: "Seek a track: /seek [flac|mp3|any] words (or /s)" };
+const HISTORY = { command: "history", description: "Your last crossings" };
+const STATUS = { command: "status", description: "Is the veil open?" };
+
 const COMMANDS: Record<M.Role, { command: string; description: string }[]> = {
   admin: [
-    { command: "status", description: "Is the veil open?" },
+    SEEK,
+    HISTORY,
+    STATUS,
     { command: "wake", description: "Part the veil (start the runner)" },
+    { command: "sleep", description: "Let the veil fall now" },
     { command: "invite", description: "Let someone through, once" },
     { command: "members", description: "Who may cross" },
   ],
-  member: [
-    { command: "status", description: "Is the veil open?" },
-    { command: "leave", description: "Be forgotten" },
-  ],
+  member: [SEEK, HISTORY, STATUS, { command: "leave", description: "Be forgotten" }],
 };
+
+const FORMATS: Fmt[] = ["flac", "mp3", "any"];
+
+async function seek(env: Env, member: M.Member, chatId: number, arg: string): Promise<Response> {
+  let words = arg.trim();
+  let fmt = (JSON.parse(member.prefs) as { format?: Fmt }).format ?? "flac";
+  const first = words.split(/\s+/, 1)[0]?.toLowerCase() as Fmt;
+  if (FORMATS.includes(first)) {
+    fmt = first;
+    words = words.slice(first.length).trim();
+  }
+  if (!words) {
+    const last = await env.DB.prepare("SELECT query, format_filter FROM searches WHERE user_id = ? ORDER BY created_at DESC LIMIT 1")
+      .bind(member.member_key)
+      .first<{ query: string; format_filter: Fmt }>();
+    if (!last) return say(chatId, "Seek what? /seek [flac|mp3|any] artist title");
+    words = last.query;
+    if (!FORMATS.includes(first)) fmt = last.format_filter;
+  }
+  const state = await hub(env).search(member, chatId, words.slice(0, 200), fmt);
+  return say(
+    chatId,
+    state === "ready" ? `Listening beyond · Searching “${words}”…` : `${label(state === "offline" ? "booting" : state)}\nI'll seek “${words}” as soon as the veil opens.`,
+  );
+}
+
+async function history(env: Env, member: M.Member, chatId: number): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT j.name, j.format, t.artist, t.title FROM jobs j LEFT JOIN tracks t ON t.id = j.track_id
+     WHERE j.user_id = ? AND j.state = 'delivered' ORDER BY j.updated_at DESC LIMIT 10`,
+  ).bind(member.member_key).all<{ name: string; format: string; artist: string | null; title: string | null }>();
+  if (!results.length) return say(chatId, "Nothing has crossed yet.");
+  const lines = results.map((r) => `• ${r.artist && r.title ? `${r.artist} – ${r.title}` : r.name} · ${(r.format ?? "").toUpperCase()}`);
+  return say(chatId, `Last crossings:\n${lines.join("\n")}`);
+}
 
 /** Commands are scoped to member chats only, so strangers see an empty menu. */
 const setCommands = (env: Env, chatId: number, role: M.Role) =>
@@ -70,7 +111,18 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
   if (update.callback_query) {
     const cq = update.callback_query;
     const me = await M.activeMember(env.DB, await M.memberKey(env.MEMBER_HMAC_KEY, cq.from.id));
-    if (!me || me.role !== "admin" || !cq.data?.startsWith("rv:")) return silence();
+    if (!me) return silence();
+    if (cq.data?.startsWith("s:") && cq.message) {
+      const act = await hub(env).searchCallback(me, cq.message.chat.id, cq.message.message_id, cq.id, cq.data);
+      for (const call of act.also ?? []) {
+        const { method, ...body } = JSON.parse(call) as { method: string };
+        waitUntil(tg(env, method, body));
+      }
+      if (!act.reply) return silence();
+      const { method, ...body } = JSON.parse(act.reply) as { method: string };
+      return reply(method, body);
+    }
+    if (me.role !== "admin" || !cq.data?.startsWith("rv:")) return silence();
     const ok = await M.revoke(env.DB, cq.data.slice(3));
     return reply("answerCallbackQuery", { callback_query_id: cq.id, text: ok ? "Revoked. The veil forgets them." : "Nothing to revoke." });
   }
@@ -79,7 +131,10 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
   if (!msg?.text || !msg.from || msg.from.is_bot || msg.chat.type !== "private") return silence();
   const chatId = msg.chat.id;
   const key = await M.memberKey(env.MEMBER_HMAC_KEY, msg.from.id);
-  const [cmdRaw = "", arg = ""] = msg.text.trim().split(/\s+/, 2);
+  const text = msg.text.trim();
+  const cmdRaw = text.split(/\s+/, 1)[0] ?? "";
+  const rest = text.slice(cmdRaw.length).trim();
+  const arg = rest.split(/\s+/, 1)[0] ?? "";
   const cmd = cmdRaw.replace(/@.*$/, "").toLowerCase();
 
   let member = await M.activeMember(env.DB, key);
@@ -108,10 +163,22 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
       return say(chatId, label(s.state));
     }
 
+    case "/s":
+    case "/seek":
+      return seek(env, member, chatId, rest);
+
+    case "/history":
+      return history(env, member, chatId);
+
+    case "/sleep": {
+      if (member.role !== "admin") return silence();
+      return say(chatId, (await hub(env).sleep()) ? label("draining") : label("offline"));
+    }
+
     case "/wake": {
       if (member.role !== "admin") return silence();
-      const r = await hub(env).ring();
-      if (r.dispatched) return say(chatId, `${label("booting")}\nThe runner is on its way (usually under a minute).`);
+      const r = await hub(env).wake(chatId);
+      if (r.dispatched) return say(chatId, `${label("booting")}\nI'll tell you when the veil is open.`);
       if (r.dispatchStatus) return say(chatId, `The veil would not part · dispatch failed (${r.dispatchStatus})`);
       return say(chatId, label(r.session.state));
     }

@@ -12,6 +12,7 @@ export interface Session {
   sessionId?: string;
   runId?: number;
   deadline?: number; // ms, heartbeat deadline while ready/draining
+  maxUploadMb?: number; // what courier can send this session (50 cloud, 2000 local Bot API)
 }
 
 export const BOOT_TIMEOUT_MS = 3 * 60_000;
@@ -36,11 +37,12 @@ export function dispatched(s: Session, runId: number | undefined): Session {
   return { ...s, runId };
 }
 
-export function hello(s: Session, now: number, runId?: number, sessionId?: string): Session {
+export function hello(s: Session, now: number, runId?: number, sessionId?: string, maxUploadMb?: number): Session {
   return enter("ready", now, {
     sessionId: sessionId ?? s.sessionId,
     runId: runId ?? s.runId,
     deadline: now + HEARTBEAT_GRACE_MS,
+    maxUploadMb: maxUploadMb ?? s.maxUploadMb,
   });
 }
 
@@ -51,7 +53,7 @@ export function heartbeat(s: Session, now: number): Session {
 
 export function draining(s: Session, now: number): Session {
   if (s.state !== "ready") return s;
-  return enter("draining", now, { sessionId: s.sessionId, runId: s.runId, deadline: now + HEARTBEAT_GRACE_MS });
+  return enter("draining", now, { sessionId: s.sessionId, runId: s.runId, maxUploadMb: s.maxUploadMb, deadline: now + HEARTBEAT_GRACE_MS });
 }
 
 export function gone(_s: Session, now: number): Session {
