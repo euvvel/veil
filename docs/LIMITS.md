@@ -38,10 +38,14 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Private repo minutes (Free) | 2,000 / month | ✅ | same |
 | Job execution time | 6 h, after which the job is killed | ✅ | docs.github.com/en/actions/reference/limits |
 | Concurrent jobs (Free) | 20 | ✅ | same |
-| `workflow_dispatch` REST | `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, body `ref` + `inputs` (max 25), docs show **200 with `workflow_run_id`, `run_url`, `html_url`** | ✅ docs / 🧪 confirm live | docs.github.com/en/rest/actions/workflows |
-| Fine-grained PAT permission for dispatch | assumed "Actions: write" | ⚠ | docs page lists only classic `repo` scope |
+| `workflow_dispatch` REST | `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, body `ref` + `inputs` (max 25), docs show 200 with `workflow_run_id`, `run_url`, `html_url`. **Observed live 2026-10-11: `204`, no body**, so the run ID may need an opt-in body field. Until confirmed, find the run with `GET /repos/{o}/{r}/actions/runs?event=workflow_dispatch` | ✅ live (204) / ⚠ run-ID opt-in | docs.github.com/en/rest/actions/workflows |
+| Fine-grained PAT: create repo, push, push workflows, dispatch | Administration, Contents, Workflows, Actions: write all succeeded with the setup token | ✅ live | 2026-10-11 |
 | Inbound connections to the runner | none (NAT) | 🧪 | measure firewalled-peer success rate |
-| Runner boot → slskd logged in | unknown | 🧪 | |
+| Runner hardware (ubuntu-latest, public repo) | 4 vCPU, 15 GB RAM | ✅ live | spike-boot run 38167125143, 2026-10-11 |
+| slskd image pull + API ready | 7 s + 2 s | ✅ live | same |
+| telegram-bot-api build from source | **749 s (~12.5 min)**, 44 MB binary. Cached afterwards | ✅ live | same |
+| Actions cache eviction | caches not used for 7 days are evicted, so a gap of a week means a 12.5-min rebuild | ⚠ check docs.github.com dependency-caching limits. Plan: store the binary as a GitHub Release asset instead | |
+| Runner boot → slskd logged in | not yet measured (needs credentials) | 🧪 | |
 
 **Public repo means public logs.** The runner must never print queries, filenames, usernames, or peer names. See [ARCHITECTURE.md](ARCHITECTURE.md#privacy).
 

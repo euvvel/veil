@@ -28,8 +28,12 @@ The runner makes **outbound** connections only, so nothing ever has to reach int
 ## Components
 
 ### Worker (front door)
-- **Auth:**
-  - Every mini app request carries `initData`. The Worker checks its HMAC as described in [LIMITS.md](LIMITS.md#telegram), rejects it if `auth_date` is older than 24 h, then looks up `user.id` in `users` (must be `status = active`).
+- **Auth (invite-only, no stored IDs):** see D7 in [DECISIONS.md](DECISIONS.md).
+  - Every mini app request carries `initData`. The Worker checks its HMAC as described in [LIMITS.md](LIMITS.md#telegram) and rejects it if `auth_date` is older than 24 h. It then computes `member_key = HMAC(MEMBER_HMAC_KEY, user.id)` and looks that up in `members`.
+  - **Enrolment:**
+    - `/start <code>` on the veil bot, or `start_param` in the mini app.
+    - `<code>` is either the admin claim code (derived from `CLAIM_SECRET`, usable only while `members` is empty) or a single-use invite (random, stored hashed, expires after 24 h).
+  - **Non-members get silence:** the webhook answers 200 and does nothing, and the API returns 404. The bot has no public description, and commands are set only per member chat (`BotCommandScopeChat`).
   - Bot webhook calls must carry the `X-Telegram-Bot-Api-Secret-Token` header we set during `setWebhook`.
 - **Doorbell:** if the Hub reports `offline`, the Worker calls `workflow_dispatch` with `inputs: { session_id }`.
   - It never passes secrets as inputs, because inputs show up on the public run page.
@@ -48,7 +52,8 @@ Draft schema. The real migrations land in Phase 2.
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `users` | allowlist and prefs | `tg_id` PK, `name`, `role` (admin/member), `status` (pending/active/revoked), `prefs` JSON |
+| `members` | who may use veil | `member_key` PK (HMAC of Telegram id, never the raw id), `alias` (chosen by the member, optional), `role` (admin/member), `status` (active/revoked), `prefs` JSON |
+| `invites` | pending invites | `code_hash` PK, `created_by`, `expires_at`, `used_at` |
 | `searches` | history | `id`, `user_id`, `query`, `format_filter`, `result_count`, `created_at` |
 | `jobs` | download queue | `id`, `user_id`, `search_id`, `peer`, `path`, `size`, `format`, `bitrate`, `state`, `attempts`, `error`, `track_id`, timestamps |
 | `tracks` | what was delivered | `id`, `artist`, `title`, `album`, `year`, `format`, `mb_recording`, `mb_release` |
@@ -57,8 +62,11 @@ Draft schema. The real migrations land in Phase 2.
 | `wishlist` | wanted later | `user_id`, `query` or `mbid`, `format_filter`, `status`, `last_checked` |
 | `peer_stats` | source reliability | `peer_hash` (HMAC of username), `ok`, `fail`, `refused`, `avg_kbps`, `last_seen` |
 
+All `user_id` columns hold the `member_key`, not a Telegram id.
+
 **Leaves nothing behind:**
-- When a job reaches `delivered`, its `peer` and `path` are set to NULL. They were only needed to re-request after a restart.
+- `jobs.chat_id` (the raw Telegram id courier delivers to) exists only while a job is in progress.
+- When a job reaches `delivered`, its `chat_id`, `peer` and `path` are set to NULL. Peer and path were only needed to re-request after a restart.
 - Peer usernames are kept only as HMACs in `peer_stats`.
 
 ### KV
@@ -160,6 +168,8 @@ There are 5 crons per account. This is how they're allocated:
 | Worker | `VEIL_BOT_TOKEN`, `WEBHOOK_SECRET` | Front bot, webhook check |
 | Worker | `GH_DISPATCH_TOKEN` | Fine-grained PAT, this repo only, Actions: write (⚠) |
 | Worker | `PEER_HMAC_KEY` | Hashing peer names |
+| Worker | `MEMBER_HMAC_KEY` | Hashing Telegram ids into `member_key` |
+| Worker | `CLAIM_SECRET` | Admin claim code (one-time, while no members exist) |
 
 ## Repo layout (target)
 

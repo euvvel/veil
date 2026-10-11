@@ -29,3 +29,14 @@ Short records of decisions that shape the project. Newest at the bottom.
 - **Decision:** one DO instance.
 - **Context:** there is one runner and two users. A single DO is the session state, the WS hub, and the job pump.
 - **Consequence:** with more runners later, this splits into one Hub per runner.
+
+### D7 · Invite-only access, no stored Telegram ids (2026-10-11)
+- **Decision:** no hand-maintained list of user IDs. Access works like this:
+  - The admin claims the bot once with a secret link.
+  - Members join through single-use invite links that expire in 24 h (`/invite`).
+  - Members are stored only as `HMAC(MEMBER_HMAC_KEY, telegram_id)`.
+- **Context:** collecting IDs by hand is overhead, and storing raw IDs isn't needed. A gate is still required, because bot usernames are publicly searchable and an open bot would let strangers drive the runner and the Soulseek account.
+- **Consequence:**
+  - Non-members get total silence: no reply, no commands, 404 from the API.
+  - The courier bot never processes updates.
+  - A raw chat id exists only on an in-flight job and is cleared on delivery.

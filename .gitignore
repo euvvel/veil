@@ -12,3 +12,5 @@ cld-fgPAT.txt
 # secrets
 cld-fgPAT.txt
 *PAT*.txt
+cld-*
+*.env

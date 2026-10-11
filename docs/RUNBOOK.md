@@ -22,8 +22,10 @@ Status: **draft**. The steps get filled in as each phase lands. Anything marked 
 ### Cloudflare
 1. Phase 2: `wrangler login`, create the D1 database and KV namespace, then set the Worker secrets listed in [ARCHITECTURE.md](ARCHITECTURE.md#secrets).
 
-## Adding a user
-Phase 6: the admin runs `/invite` in **veil** or approves a pending request in Settings. Until then, add a row to `users` with `wrangler d1 execute`.
+## Access
+1. Claim: open `t.me/<veil_bot>?start=<claim code>` once. You become admin. The claim code stops working once a member exists.
+2. Invite: send `/invite` to veil to get a single-use link valid for 24 h, and share it.
+3. Revoke: `/members`, then pick a member to revoke.
 
 ## If the GitHub account is banned
 Point the doorbell at another host (see D1 in [DECISIONS.md](DECISIONS.md)). The Worker, D1, and the mini app don't change.
