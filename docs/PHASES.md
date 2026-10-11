@@ -3,7 +3,7 @@
 | # | Phase | Status |
 |---|---|---|
 | 0 | Docs, decisions, limits | ✅ done |
-| 1 | Runner spike (riskiest unknowns) | next |
+| 1 | Runner spike (riskiest unknowns) | A ✅ B ✅ · local Bot API pending api_id |
 | 2 | Front door: Worker, auth, D1, Hub DO, dispatch, bot webhook | |
 | 3 | MVP loop: search → download → deliver, idle shutdown, history | |
 | 4 | Mini app UI (Seek, Crossings, status bar) | |
@@ -33,3 +33,13 @@
 | How courier's FLAC document looks in clients | D5 delivery |
 | Single bot on cloud + local at once? | Whether D3 can be simplified |
 | Real slskd REST shapes | Phase 3 agent code |
+
+### Results (2026-10-11)
+- **Stage A (run 38167125143):** slskd pull 7 s, API ready 2 s. telegram-bot-api builds in 12.5 min, then comes from cache. 4 vCPU, 15 GB.
+- **Stage B (run 38170474457):**
+  - Login works from GitHub IPs, about 22 s from dispatch.
+  - Searches return 220–250 peers.
+  - 7 of 8 downloads succeeded with no inbound port.
+  - MP3 and FLAC were both delivered, and logout was clean.
+- **Conclusion:** the GitHub runner is viable. "Booting" is ~20–30 s, not minutes. F3 (no inbound connections) isn't blocking, so we skip the relay VPS.
+- **Remaining:** start the local Bot API server and send a file over 50 MB (needs TG_API_ID/HASH). Test peers without a free slot.

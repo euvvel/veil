@@ -41,12 +41,18 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | `workflow_dispatch` REST | `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, body `ref` + `inputs` (max 25), docs show 200 with `workflow_run_id`, `run_url`, `html_url`. **Live 2026-10-11: plain body gives `204` with no body. Adding `"return_run_details": true` gives `200` with the run id.** veil always sends the flag. | ✅ live | docs.github.com/en/rest/actions/workflows |
 | Worker dispatch PAT (`veil-dispatch`): veil repo only, Actions: Read and write | dispatch ✅, other repos 404, secrets 403 | ✅ live | 2026-10-11 |
 | Fine-grained PAT: create repo, push, push workflows, dispatch | Administration, Contents, Workflows, Actions: write all succeeded with the setup token | ✅ live | 2026-10-11 |
-| Inbound connections to the runner | none (NAT) | 🧪 | measure firewalled-peer success rate |
+| Inbound connections to the runner | none (NAT). In practice this hasn't been a problem: see the downloads row below | ✅ live | |
 | Runner hardware (ubuntu-latest, public repo) | 4 vCPU, 15 GB RAM | ✅ live | spike-boot run 38167125143, 2026-10-11 |
 | slskd image pull + API ready | 7 s + 2 s | ✅ live | same |
 | telegram-bot-api build from source | **749 s (~12.5 min)**, 44 MB binary. Cached afterwards | ✅ live | same |
 | Actions cache eviction | caches not used for 7 days are evicted, so a gap of a week means a 12.5-min rebuild | ⚠ check docs.github.com dependency-caching limits. Plan: store the binary as a GitHub Release asset instead | |
-| Runner boot → slskd logged in | not yet measured (needs credentials) | 🧪 | |
+| Dispatch → job started | **2 s** | ✅ live | spike-soulseek run 38170474457, 2026-10-11 |
+| Dispatch → slskd logged in to Soulseek | **~22 s** (setup 7 s, pull + start + login 12 s) | ✅ live | same |
+| Soulseek accepts GitHub runner IPs | yes, login OK, clean logout (`DELETE /server` → 204, `isLoggedIn=false`) | ✅ live | same |
+| Search | first result ~1 s; 220–250 responses / 6k–13k files per query; finishes in ~17 s (state flags e.g. `Completed, ResponseLimitReached`, `Completed, TimedOut`) | ✅ live | same |
+| Downloads without inbound port (free-slot peers only) | **7 of 8 succeeded**, 1 still unfinished at 8 min; speed 0.5–19 MB/s (`averageSpeed` assumed bytes/s ⚠) | ✅ live | same |
+| Downloads from peers without a free slot | not tested yet | 🧪 | |
+| Delivery via cloud Bot API | MP3 1.6 MB → `sendAudio` in 2 s (shown as audio); FLAC 36 MB → `sendDocument` in 4 s (shown as document) | ✅ live | same |
 
 **Public repo means public logs.** The runner must never print queries, filenames, usernames, or peer names. See [ARCHITECTURE.md](ARCHITECTURE.md#privacy).
 
@@ -58,7 +64,7 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Cloud Bot API download (getFile) | 20 MB | ✅ | same |
 | Local Bot API server upload | 2,000 MB | ✅ | same ("Using a Local Bot API Server") |
 | `sendAudio` formats for the music player | **MP3 or M4A only** | ✅ | same |
-| FLAC delivery | send with `sendDocument`; test whether clients show a player | 🧪 | |
+| FLAC delivery | `sendDocument` works (36 MB in 4 s). How clients present it: ask the owner | ✅ / 🧪 UX | |
 | initData validation | HMAC-SHA256: `secret = HMAC(key="WebAppData", msg=bot_token)`; `hash = hex(HMAC(secret, data_check_string))`; fields sorted alphabetically, joined by `\n` | ✅ | core.telegram.org/bots/webapps |
 | `hash` excluded from data-check-string | assumed (standard practice); docs wording ambiguous | ⚠ | confirm with a unit test against a real initData |
 | auth_date max age | not specified, so we choose (24 h) | ✅ (our policy) | |
