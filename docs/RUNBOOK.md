@@ -20,7 +20,11 @@ Status: **draft**. The steps get filled in as each phase lands. Anything marked 
 4. Settings → Actions → General: set "Fork pull request workflows" to require approval, and don't add `pull_request` triggers.
 
 ### Cloudflare
-1. Phase 2: `wrangler login`, create the D1 database and KV namespace, then set the Worker secrets listed in [ARCHITECTURE.md](ARCHITECTURE.md#secrets).
+1. `wrangler d1 create veil`, put the id in `worker/wrangler.jsonc`, then `wrangler d1 migrations apply veil --remote`.
+2. `wrangler deploy`, then `wrangler secret bulk <json>` with the Worker secrets listed in [ARCHITECTURE.md](ARCHITECTURE.md#secrets).
+3. **Custom domain:** workers.dev doesn't serve on this account. Attach a hostname with `PUT /accounts/{id}/workers/domains` (`hostname`, `service: "veil"`, `zone_id`, `environment: "production"`). The hostname stays out of the repo, and a `wrangler deploy` keeps it attached.
+4. Set the bot webhook: `setWebhook` with `url=<domain>/tg/webhook`, `secret_token=WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`. Clear the public menu with `deleteMyCommands`, `setMyDescription ""` and `setMyShortDescription ""`.
+5. GitHub secrets for the runner: `HUB_URL=<domain>`, `RUNNER_SECRET`.
 
 ## Access
 1. Claim: open `t.me/<veil_bot>?start=<claim code>` once. You become admin. The claim code stops working once a member exists.

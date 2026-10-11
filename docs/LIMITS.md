@@ -22,7 +22,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Durable Objects on Free | Yes, **SQLite-backed only** | ✅ | developers.cloudflare.com/durable-objects/platform/pricing |
 | DO requests | 100,000 / day; incoming WS messages billed 20:1; outgoing messages free | ✅ | same |
 | DO duration | 13,000 GB-s / day | ✅ | same |
-| DO WebSocket Hibernation on Free | not stated | ⚠ | check the DO WebSocket Hibernation API page |
+| DO WebSocket Hibernation on Free | `acceptWebSocket` + tags work on Free (live 2026-10-12); actual sleep not yet observed | ✅ API / ⚠ billing | live deploy |
+| `*.workers.dev` on this account | every Worker answers **1101**, even a hello world; no CF incident | ✅ live (workaround: custom domain) | 2026-10-11 |
 | Workers AI | 10,000 Neurons / day, no paid overage on Free | ✅ | developers.cloudflare.com/workers-ai/platform/pricing |
 
 **What this means for the design**
