@@ -36,5 +36,5 @@ jobs:
           HUB_URL: ${{ secrets.HUB_URL }}
           RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
           SESSION_ID: ${{ inputs.session_id }}
-          STAY_S: "120"
+          STAY_S: "300"
         run: python runner/hub_smoke.py
