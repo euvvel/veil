@@ -1,0 +1,40 @@
+name: runner
+
+# Started by the Worker's doorbell (workflow_dispatch with return_run_details).
+# Phase 2: Hub smoke only. Phase 3 adds slskd and courier delivery.
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        description: Hub session id (not secret)
+        required: false
+        default: ""
+
+concurrency:
+  group: veil-runner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340 # 5 h 40 m; GitHub kills jobs at 6 h
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -q websockets==17.1
+
+      - name: Hub smoke
+        env:
+          HUB_URL: ${{ secrets.HUB_URL }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          SESSION_ID: ${{ inputs.session_id }}
+          STAY_S: "120"
+        run: python runner/hub_smoke.py

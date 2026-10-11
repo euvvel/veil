@@ -64,7 +64,7 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Cloud Bot API download (getFile) | 20 MB | ✅ | same |
 | Local Bot API server upload | 2,000 MB | ✅ | same ("Using a Local Bot API Server") |
 | `sendAudio` formats for the music player | **MP3 or M4A only** | ✅ | same |
-| FLAC delivery | `sendDocument` works (36 MB in 4 s). How clients present it: ask the owner | ✅ / 🧪 UX | |
+| FLAC delivery | `sendDocument` works (36 MB in 4 s) and **plays in Telegram clients** (owner confirmed 2026-10-12) | ✅ live | |
 | initData validation | HMAC-SHA256: `secret = HMAC(key="WebAppData", msg=bot_token)`; `hash = hex(HMAC(secret, data_check_string))`; fields sorted alphabetically, joined by `\n` | ✅ | core.telegram.org/bots/webapps |
 | `hash` excluded from data-check-string | assumed (standard practice); docs wording ambiguous | ⚠ | confirm with a unit test against a real initData |
 | auth_date max age | not specified, so we choose (24 h) | ✅ (our policy) | |

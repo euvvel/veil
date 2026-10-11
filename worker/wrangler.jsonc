@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "veil",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-28",
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/tg/*", "/hub/*"]
+  },
+
+  "d1_databases": [
+    { "binding": "DB", "database_name": "veil", "database_id": "545af128-b0b5-4e1f-8c04-4b67f8037c25", "migrations_dir": "migrations" }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+
+  "vars": {
+    "BOT_USERNAME": "euveilbot",
+    "GH_REPO": "euvvel/veil",
+    "GH_WORKFLOW": "runner.yml",
+    "GH_REF": "main"
+  }
+  // Secrets (wrangler secret put): VEIL_BOT_TOKEN, WEBHOOK_SECRET, RUNNER_SECRET,
+  // MEMBER_HMAC_KEY, PEER_HMAC_KEY, CLAIM_SECRET, GH_DISPATCH_TOKEN
+}
