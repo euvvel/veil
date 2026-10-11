@@ -38,7 +38,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Private repo minutes (Free) | 2,000 / month | ✅ | same |
 | Job execution time | 6 h, after which the job is killed | ✅ | docs.github.com/en/actions/reference/limits |
 | Concurrent jobs (Free) | 20 | ✅ | same |
-| `workflow_dispatch` REST | `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, body `ref` + `inputs` (max 25), docs show 200 with `workflow_run_id`, `run_url`, `html_url`. **Observed live 2026-10-11: `204`, no body**, so the run ID may need an opt-in body field. Until confirmed, find the run with `GET /repos/{o}/{r}/actions/runs?event=workflow_dispatch` | ✅ live (204) / ⚠ run-ID opt-in | docs.github.com/en/rest/actions/workflows |
+| `workflow_dispatch` REST | `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`, body `ref` + `inputs` (max 25), docs show 200 with `workflow_run_id`, `run_url`, `html_url`. **Live 2026-10-11: plain body gives `204` with no body. Adding `"return_run_details": true` gives `200` with the run id.** veil always sends the flag. | ✅ live | docs.github.com/en/rest/actions/workflows |
+| Worker dispatch PAT (`veil-dispatch`): veil repo only, Actions: Read and write | dispatch ✅, other repos 404, secrets 403 | ✅ live | 2026-10-11 |
 | Fine-grained PAT: create repo, push, push workflows, dispatch | Administration, Contents, Workflows, Actions: write all succeeded with the setup token | ✅ live | 2026-10-11 |
 | Inbound connections to the runner | none (NAT) | 🧪 | measure firewalled-peer success rate |
 | Runner hardware (ubuntu-latest, public repo) | 4 vCPU, 15 GB RAM | ✅ live | spike-boot run 38167125143, 2026-10-11 |
