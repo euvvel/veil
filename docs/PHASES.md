@@ -5,7 +5,7 @@
 | 0 | Docs, decisions, limits | ✅ done |
 | 1 | Runner spike (riskiest unknowns) | A ✅ B ✅ · local Bot API pending api_id |
 | 2 | Front door: Worker, auth, D1, Hub DO, dispatch, bot webhook | ✅ done (2026-10-12) |
-| 3 | MVP loop: search → download → deliver, idle shutdown, history | built, live test pending |
+| 3 | MVP loop: search → download → deliver, idle shutdown, history | ✅ done (2026-10-12) |
 | 4 | Mini app UI (Seek, Crossings, status bar) | |
 | 5 | Beyond (Explore feeds, weekly mix, feedback) | |
 | 6 | Wishlist, invites, AI query rewrite and filename cleanup | |
@@ -54,3 +54,11 @@
 - **Deployment notes:**
   - The account's `*.workers.dev` subdomain answers 1101 for every Worker, even a hello world.
   - veil is served on a custom domain, attached through the API and kept out of the repo. It's held in `HUB_URL` (GitHub secret) and the webhook URL.
+
+## Phase 3: results (2026-10-12)
+- **Tests:** 23 unit tests; 17 Phase 3 end-to-end checks with a fake runner (`worker/test/phase3-smoke.mjs`); the Phase 2 suite still passes.
+- **Live test (owner):** `/seek` → results in ~20 s → toggles → tap → MP3 delivered by courier → `/history` → `/sleep` → drain, Soulseek logout, runner gone in ~9 s.
+- **Fixed during the test:**
+  - **Bot replies:** they used to ride on the webhook response, which gives no delivery result, and `/sleep`/`/status` once seemed silent. Replies now go through an explicit Bot API call, with the outcome logged. Every reply since is `ok: true`.
+  - **Oversize taps:** a tap on a file above the upload limit used to download it and then fail. It's now refused up front.
+- **Still open:** files over 50 MB need the local Bot API server (waiting on `TG_API_ID`/`TG_API_HASH`).

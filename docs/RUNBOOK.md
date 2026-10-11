@@ -33,3 +33,14 @@ Status: **draft**. The steps get filled in as each phase lands. Anything marked 
 
 ## If the GitHub account is banned
 Point the doorbell at another host (see D1 in [DECISIONS.md](DECISIONS.md)). The Worker, D1, and the mini app don't change.
+
+## Reading Worker logs
+Each update logs `{"at":"update", kind, cmd|op}` and each reply logs `{"at":"reply", method, ok, error?}`. These never contain ids or search words.
+
+Query them with `POST /accounts/{id}/workers/observability/telemetry/query`:
+```json
+{ "queryId": "x", "view": "events", "limit": 300,
+  "timeframe": { "from": <ms>, "to": <ms> },
+  "parameters": { "filters": [{ "key": "$metadata.service", "operation": "eq", "type": "string", "value": "veil" }] } }
+```
+The console output is in each event's `source` field.
