@@ -67,7 +67,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Downloads dir | `SLSKD_DOWNLOADS_DIR` (must exist, writable) | ✅ | same |
 | Listen port | `SLSKD_SLSK_LISTEN_PORT` | ✅ | same |
 | No shares | leave `SLSKD_SHARED_DIR` unset; `SLSKD_SLSK_NO_DNET` allowed when sharing nothing | ✅ | same |
-| REST endpoints (search, responses, downloads, transfers) | **not yet checked** | ⚠ | read `/swagger` on a running instance during Phase 1. Don't code against them from memory. |
+| REST API (v0.26.1) | Auth header `X-API-Key`. Spec at `/swagger/v0/swagger.json` (needs `SLSKD_SWAGGER=true`). `POST /api/v0/searches` (`SearchRequest`: searchText, searchTimeout, filterResponses, maximumPeerQueueLength, minimumPeerUploadSpeed, responseLimit, fileLimit…), `GET /api/v0/searches/{id}/responses`, `POST /api/v0/transfers/downloads/{username}` (array of `QueueDownloadRequest`), `POST /api/v0/transfers/downloads/batches` (has `externalId`), `GET /api/v0/transfers/downloads/{username}/{id}` (+`/position`), `DELETE /api/v0/server` (disconnect). TransferStates: None, Requested, Queued, Initializing, InProgress, Completed, Succeeded, Cancelled, TimedOut, Errored, Rejected, Aborted, Locally, Remotely. | ✅ | full spec saved in `runner/reference/slskd-0.26.1-openapi.json` (pulled from a local run, 2026-10-11) |
+| Docker image | `slskd/slskd`, pinned by digest. API ready ~1 s after start locally (no login) | ✅ | local run |
 
 ## MusicBrainz / ListenBrainz
 

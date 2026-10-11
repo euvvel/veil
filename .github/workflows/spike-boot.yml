@@ -1,0 +1,51 @@
+name: spike-boot
+
+# Phase 1, stage A: boot timings on a real runner. Needs no secrets.
+on: workflow_dispatch
+
+concurrency:
+  group: veil-runner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SLSKD_IMAGE: slskd/slskd@sha256:588af49abc3088d639c8f1174d3bfad6e92c093a275a593140e3ac9311ebf6c4 # 0.26.1
+  TBA_DIR: ${{ github.workspace }}/.tba
+
+jobs:
+  boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve telegram-bot-api commit
+        id: tba
+        run: echo "sha=$(git ls-remote https://github.com/tdlib/telegram-bot-api.git HEAD | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache telegram-bot-api
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TBA_DIR }}
+          key: tba-${{ runner.os }}-${{ steps.tba.outputs.sha }}
+
+      - name: Build telegram-bot-api
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash runner/spike/build-tba.sh "$TBA_DIR"
+
+      - name: Measure boot
+        env:
+          TBA_BIN: ${{ env.TBA_DIR }}/bin/telegram-bot-api
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          echo "tba_cache_hit=${CACHE_HIT:-false}" >> "$RUNNER_TEMP/timings.env"
+          bash runner/spike/boot.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spike-boot
+          path: ${{ runner.temp }}/spike-out
+          retention-days: 7
