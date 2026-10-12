@@ -23,7 +23,7 @@ class Slskd:
             await asyncio.sleep(1)
         return False
 
-    async def search(self, text: str, on_progress=None, settle_s: float = 1.5, min_s: float = 2.5, cap_s: float = 6,
+    async def search(self, text: str, on_progress=None, settle_s: float = 1.0, min_s: float = 2.5, cap_s: float = 6,
                      response_limit: int = 1000, file_limit: int = 60000):
         """Run a search, stop it once answers settle, and yield (responses, state, done=True) once.
 
