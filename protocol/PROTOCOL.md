@@ -16,7 +16,7 @@ Our own protocol: JSON text frames over the runner's WebSocket (`/hub/runner`, `
 |---|---|---|
 | `runner.hello` | `run_id`, `session_id`, `agent`, `active_jobs: string[]`, `max_upload_mb`, `direct_base` (tunnel URL, if any) | on every (re)connect |
 | `runner.heartbeat` | `active_jobs: number`, `idle_s` | every 30 s |
-| `search.results` | `search_id`, `responses`, `files`, `folders: Folder[]`, `partial` | about every 5 s while answers arrive (`partial: true`), then once when the search ends (`partial: false`). Each frame replaces the previous one. |
+| `search.results` | `search_id`, `responses`, `files`, `folders: Folder[]`, `partial` | once when the search ends (`partial: false`). `partial: true` frames are allowed (each replaces the previous), but slskd exposes nothing mid-search, so the agent sends none. |
 | `job.state` | `job_id`, `state`, plus `pct`, `place`, `kbps`, `error`, `track` | state change, or progress at most every 2 s |
 | `session.state` | `state: "draining"` | idle timeout, hard cap, or `session.drain` |
 | `runner.bye` | `reason` | last message before exit |

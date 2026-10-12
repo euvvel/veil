@@ -75,7 +75,7 @@ One Durable Object instance. It uses the WebSocket Hibernation API, with sockets
 - Held while the runner boots, then sent on hello.
 - **Results:**
   - Each `search.results` frame replaces the cached results.
-  - Partial frames update the app live. The bot sends one message when the search ends.
+  - Partial frames (if a runner ever sends them) update the app; the bot sends one message when the search ends.
   - Ranking (`rank.ts`): format filter and fallback, then free slot, peer reliability (`peer_stats`), queue length and speed. Identical files are deduplicated.
   - Up to 400 items are kept per view. The bot shows 8 per page; the app requests 30.
 
@@ -112,8 +112,8 @@ Dispatch to Soulseek login takes about 20 s.
 
 **Agent loop**
 - **Search:**
-  - slskd with `searchTimeout` 15000 (milliseconds; see LIMITS), `responseLimit` 500, `fileLimit` 25,000.
-  - Snapshots every 5 s while answers arrive.
+  - slskd with an 8,000 ms quiet window (`searchTimeout` is milliseconds; see LIMITS), `responseLimit` 500, `fileLimit` 25,000.
+  - Stopped at 15 s total (slskd Cancel keeps responses). slskd exposes no responses until a search ends, so one final frame is sent.
   - Each snapshot is grouped by folder and trimmed to ≤ 120 folders × 40 audio files, keeping the best FLAC and MP3 folders.
 - **Jobs:**
   - One slskd batch per job, tagged with `externalId`.

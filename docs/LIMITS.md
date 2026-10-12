@@ -19,6 +19,7 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | D1 rows read | 5,000,000 / day | ✅ | developers.cloudflare.com/d1/platform/pricing |
 | D1 rows written | 100,000 / day | ✅ | same |
 | D1 size | 500 MB per DB, 10 DBs, 5 GB per account | ✅ | developers.cloudflare.com/d1/platform/limits |
+| D1 bound parameters | **100 per query** (per statement, also inside batches). The Hub chunks `IN (…)` lookups by 90; 120-peer results hit this on 2026-10-12. | ✅ | same |
 | Durable Objects on Free | Yes, **SQLite-backed only** | ✅ | developers.cloudflare.com/durable-objects/platform/pricing |
 | DO requests | 100,000 / day; incoming WS messages billed 20:1; outgoing messages free | ✅ | same |
 | DO duration | 13,000 GB-s / day | ✅ | same |
@@ -86,7 +87,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Docker image | `slskd/slskd`, pinned by digest. API ready ~1 s after start locally (no login) | ✅ | local run |
 | `SearchRequest.searchTimeout` unit | **milliseconds** in practice. slskd's API description says seconds, but `ToSearchOptions` passes it unchanged to Soulseek.NET `SearchOptions(searchTimeout = 15000 ms)`. Sending `12` ended searches after 12 ms with 0 results (live 2026-10-12). veil sends 15000. | ✅ source + live | slskd `src/slskd/Search/API/DTO/SearchRequest.cs`, Soulseek.NET `src/Options/SearchOptions.cs` |
 | `responseLimit` / `fileLimit` defaults | 100 / 10,000. veil sends 500 / 25,000. | ✅ | OpenAPI descriptions |
-| Partial responses while a search runs | `GET /searches/{id}/responses` during the search | 🧪 first live run | |
+| Partial responses while a search runs | **none**: `/responses` and `?includeResponses=true` are both empty until the search ends | ✅ live 2026-10-12 (check-search) | |
+| Search duration | the quiet window resets with every answer (19–27 s seen at 8–15 s). veil stops at 15 s with `PUT /searches/{id}` (Cancel), which keeps the responses: 183/183 and 291/292 peers vs uncapped | ✅ live 2026-10-12 | |
 
 ## MusicBrainz / ListenBrainz
 

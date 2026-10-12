@@ -76,7 +76,7 @@
   - Automatic peer fallback added.
 
 ## Phase 4.5: review (2026-10-12)
-- **Search volume** (D9): the slskd timeout unit bug was fixed, results stream in, and up to 400 per view are paged.
+- **Search volume** (D9): searches now take up to 500 peers and stop at 15 s, and up to 400 results per view are paged. Verified live with `check-search`. The timeout's unit is milliseconds, despite slskd's docs; a seconds value broke searches for one round.
 - **Help** (D10):
   - `/help`, plain-word search, self-refreshing menus.
   - In the app: Guide and About sheets. GUIDE.md is checked by a test.

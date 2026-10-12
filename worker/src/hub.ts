@@ -28,6 +28,9 @@ const MAX_OPENINGS = 3;
 const EDIT_EVERY_MS = 4000;
 const SEARCH_TTL_MS = 6 * 3600_000;
 const MAX_AUTO_RINGS = 2;
+const D1_MAX_PARAMS = 90; // D1 allows 100 bound parameters per query (LIMITS.md)
+
+const chunks = <T>(xs: T[], n = D1_MAX_PARAMS): T[][] => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 const TICKET_TTL_MS = 60_000;
 const MAX_SOURCES = 4; // the first peer plus up to three others with the same file
 const PEER_ERRORS = new Set(["connect", "timeout", "rejected", "queue", "not_shared", "unknown"]);
@@ -272,13 +275,14 @@ export class Hub extends DurableObject<Env> {
     const users = [...new Set(folders.map((f) => f.u))];
     const hashes = await Promise.all(users.map((u) => hmacHex(this.env.PEER_HMAC_KEY, u)));
     const scores = new Map<string, number>();
-    if (hashes.length) {
+    const byHash = new Map<string, number>();
+    for (const part of chunks(hashes)) {
       const { results } = await this.env.DB.prepare(
-        `SELECT peer_hash, ok, fail FROM peer_stats WHERE peer_hash IN (${hashes.map(() => "?").join(",")})`,
-      ).bind(...hashes).all<{ peer_hash: string; ok: number; fail: number }>();
-      const byHash = new Map(results.map((r) => [r.peer_hash, peerScore(r.ok, r.fail)]));
-      users.forEach((u, i) => byHash.has(hashes[i]!) && scores.set(u, byHash.get(hashes[i]!)!));
+        `SELECT peer_hash, ok, fail FROM peer_stats WHERE peer_hash IN (${part.map(() => "?").join(",")})`,
+      ).bind(...part).all<{ peer_hash: string; ok: number; fail: number }>();
+      for (const r of results) byHash.set(r.peer_hash, peerScore(r.ok, r.fail));
     }
+    users.forEach((u, i) => byHash.has(hashes[i]!) && scores.set(u, byHash.get(hashes[i]!)!));
     await this.ctx.storage.put(`r:${rec.sid}`, { folders, scores: [...scores] } satisfies Results);
     const tally = counts(folders, rec.fmt, rec.prefs);
 
@@ -477,10 +481,9 @@ export class Hub extends DurableObject<Env> {
   }
 
   private async snapshot(g: GroupRec): Promise<AppCrossing> {
-    const missing = g.jobs.filter((id) => !this.progress.has(id));
-    if (missing.length) {
-      const { results } = await this.env.DB.prepare(`SELECT id, state, error FROM jobs WHERE id IN (${missing.map(() => "?").join(",")})`)
-        .bind(...missing).all<{ id: string; state: JobProgress["state"]; error: string | null }>();
+    for (const part of chunks(g.jobs.filter((id) => !this.progress.has(id)))) {
+      const { results } = await this.env.DB.prepare(`SELECT id, state, error FROM jobs WHERE id IN (${part.map(() => "?").join(",")})`)
+        .bind(...part).all<{ id: string; state: JobProgress["state"]; error: string | null }>();
       for (const r of results) this.progress.set(r.id, { state: r.state, error: r.error ?? undefined });
     }
     const states = g.jobs.map((id) => this.progress.get(id) ?? { state: "pending" as const });

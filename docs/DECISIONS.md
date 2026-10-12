@@ -66,7 +66,8 @@ Short records of decisions that shape the project. Newest at the bottom.
 - **Context:**
   - Searches returned few results. The agent sent `searchTimeout: 15000` (slskd reads seconds), kept 25 folders, and the bot showed 8 items with no paging.
 - **Decision:**
-  - The runner: 15,000 ms timeout, 500 peers, partial snapshots every 5 s, up to 120 folders × 40 files per frame.
+  - The runner: 8,000 ms quiet window, stopped at 15 s total (slskd Cancel keeps responses), 500 peers, up to 120 folders × 40 files per frame. Live: 466–484 peers / 25k files in about 3 s for a popular query; 183–291 peers in about 16 s otherwise.
+  - Partial results were planned but slskd exposes no responses until a search ends. The Hub and app still accept `partial` frames; the runner simply sends none.
   - Correction, same day: the first D9 build sent `searchTimeout: 12`, believing the API description (seconds). slskd passes it to Soulseek.NET as milliseconds, so every search ended at once with 0 results. Always check the source when a documented unit contradicts working behaviour.
   - The Hub keeps up to 400 ranked items per view.
   - The bot pages by 8 (`◀ n / N ▶`); the app loads 30 at a time with *Show more*.
