@@ -29,7 +29,8 @@ class Slskd:
 
         Measured live (check-search timeline, 2026-10-12): about 98% of answers arrive within 3-4 s;
         waiting 15-28 s only adds stragglers (784 → 798, 182 → 184, 286 → 291 peers).
-        So: after `min_s`, stop as soon as no new answer arrived for `settle_s`; never wait past `cap_s`.
+        So: after `min_s`, stop as soon as the count grew by under 1% (or not at all) over the last `settle_s`;
+        popular queries keep a trickle of ~1 answer/s that would otherwise run to `cap_s`. Never wait past `cap_s`.
         Stopping is slskd's Cancel (PUT /searches/{id}), which keeps every response.
 
         searchTimeout is in MILLISECONDS and counts from the last answer (Soulseek.NET); slskd's API description
@@ -41,7 +42,7 @@ class Slskd:
                 "fileLimit": file_limit, "filterResponses": True}
         (await self.c.post("/searches", json=body)).raise_for_status()
         state, started, stopped = "", time.monotonic(), False
-        last_count, last_change = 0, time.monotonic()
+        last_count, history = 0, []  # (time, count)
         try:
             while time.monotonic() - started < cap_s + 15:
                 s = (await self.c.get(f"/searches/{sid}")).json()
@@ -50,11 +51,14 @@ class Slskd:
                     break
                 now, count = time.monotonic(), s.get("responseCount") or 0
                 if count != last_count:
-                    last_count, last_change = count, now
+                    last_count = count
                     if on_progress:
                         on_progress(count, s.get("fileCount") or 0)
+                history.append((now, count))
+                before = next((c for ts, c in reversed(history) if now - ts >= settle_s), None)
+                settled = before is not None and count - before <= max(1, count // 100)
                 elapsed = now - started
-                if not stopped and (elapsed >= cap_s or (elapsed >= min_s and now - last_change >= settle_s)):
+                if not stopped and (elapsed >= cap_s or (elapsed >= min_s and settled)):
                     await self.c.put(f"/searches/{sid}")
                     stopped = True
                 await asyncio.sleep(0.4)
