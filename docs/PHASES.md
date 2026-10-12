@@ -76,7 +76,11 @@
   - Automatic peer fallback added.
 
 ## Phase 4.5: review (2026-10-12)
-- **Search volume** (D9): searches now take up to 500 peers and stop at 15 s, and up to 400 results per view are paged. Verified live with `check-search`. The timeout's unit is milliseconds, despite slskd's docs; a seconds value broke searches for one round.
+- **Search volume and speed** (D9):
+  - Answer arrival was measured live (`check-search timeline`).
+  - Searches stop once answers settle: 5–7 s for up to about 800 peers / 42,000 files. Up to 400 results per view are paged.
+  - The timeout's unit is milliseconds, despite slskd's docs; a seconds value broke searches for one round.
+- **App freeze after searching:** Telegram's SDK throws on an empty main button text. Fixed, and the UI test now loads the real SDK. Added an error boundary and client error reports.
 - **Help** (D10):
   - `/help`, plain-word search, self-refreshing menus.
   - In the app: Guide and About sheets. GUIDE.md is checked by a test.

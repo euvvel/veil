@@ -112,8 +112,9 @@ Dispatch to Soulseek login takes about 20 s.
 
 **Agent loop**
 - **Search:**
-  - slskd with an 8,000 ms quiet window (`searchTimeout` is milliseconds; see LIMITS), `responseLimit` 500, `fileLimit` 25,000.
-  - Stopped at 15 s total (slskd Cancel keeps responses). slskd exposes no responses until a search ends, so one final frame is sent.
+  - slskd with `responseLimit` 1,000 and `fileLimit` 60,000. `searchTimeout` is milliseconds (see LIMITS) and set long, because the agent decides when to stop.
+  - **Stop rule:** after 2.5 s, stop once the answer count grew under 1% in the last second; never past 6 s. Uses slskd Cancel, which keeps responses. Typical search: 5–7 s.
+  - The answer count streams as `search.progress`. slskd exposes no responses until a search ends, so one results frame is sent.
   - Each snapshot is grouped by folder and trimmed to ≤ 120 folders × 40 audio files, keeping the best FLAC and MP3 folders.
 - **Jobs:**
   - One slskd batch per job, tagged with `externalId`.

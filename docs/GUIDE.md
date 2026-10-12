@@ -11,7 +11,7 @@ Files always arrive from the courier bot. The first time, open the courier and p
 
 ## Seeking
 
-Type what you're looking for: artist, album, title. veil asks Soulseek for up to 500 people's answers and shows them within about fifteen seconds.
+Type what you're looking for: artist, album, title. veil listens until Soulseek's answers settle, usually five to seven seconds, gathering up to a thousand people's answers. While it listens, the app counts the answers as they arrive.
 
 - **Tracks** are single files. **Albums** are whole folders from one person.
 - **FLAC · MP3 · Any** picks the format. FLAC comes first by default. When no FLAC fits your size limit, MP3 320 is offered first instead (Settings → MP3 320 fallback).

@@ -82,7 +82,7 @@ export const GUIDE: HelpSection[] = [
   {
     title: "Seeking",
     body: [
-      "Just type what you are looking for (artist, album, title), or use /seek. Soulseek is asked for up to 500 people's answers; results arrive within about fifteen seconds.",
+      "Just type what you are looking for (artist, album, title), or use /seek. veil listens until Soulseek's answers settle, usually five to seven seconds, and gathers up to a thousand people's answers.",
       "Tracks are single files; Albums are whole folders from one person. FLAC comes first by default; when no FLAC fits your size limit, MP3 320 is offered first instead.",
     ],
   },

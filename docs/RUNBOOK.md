@@ -60,10 +60,22 @@ The console output is in each event's `source` field.
    node --experimental-strip-types test/local-smoke.mjs  http://127.0.0.1:8787   # front door, auth, Hub
    node --experimental-strip-types test/phase3-smoke.mjs http://127.0.0.1:8787   # search, paging, crossings
    node --experimental-strip-types test/phase4-smoke.mjs http://127.0.0.1:8787   # app API, direct crossing, fallback
+   npm run test:ui -- http://127.0.0.1:8787 [shots-dir]                          # built app in Chrome, inside Telegram's real SDK
    ```
+   The UI test loads `telegram.org/js/telegram-web-app.js` for real, because a permissive stand-in hid an SDK exception that froze the app (the main button refuses empty text). Build the app first; `CHROME_PATH` defaults to `/usr/bin/google-chrome`.
    Each suite needs a fresh D1 (it claims the keeper).
 4. **Build the app:** `cd app && npm run build`, which writes `worker/public/`.
 5. **Migrate and deploy:** `cd worker && npx wrangler d1 migrations apply veil --remote && npx wrangler deploy`.
 6. **Push.** The runner checks out `main` each time it starts, so agent changes take effect on the next wake.
 
 Member command menus refresh themselves after a deploy that changes `help.ts` (`MENU_VERSION`).
+
+## Diagnosing search against real Soulseek
+Dispatch the `check-search` workflow. It runs the agent's own search code on a GitHub runner and logs counts only.
+- `script=search` prints per query: time, peers, files, folders sent, end state.
+- `script=timeline` prints the answer count every second for 30 s.
+
+Queries come from the `SPIKE_QUERIES` secret.
+
+## Client errors
+The mini app reports render errors and unhandled exceptions as `{"at":"client", where, message, stack}`, with digits masked. Find them with the observability query above.

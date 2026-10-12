@@ -88,7 +88,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | `SearchRequest.searchTimeout` unit | **milliseconds** in practice. slskd's API description says seconds, but `ToSearchOptions` passes it unchanged to Soulseek.NET `SearchOptions(searchTimeout = 15000 ms)`. Sending `12` ended searches after 12 ms with 0 results (live 2026-10-12). veil sends 15000. | ✅ source + live | slskd `src/slskd/Search/API/DTO/SearchRequest.cs`, Soulseek.NET `src/Options/SearchOptions.cs` |
 | `responseLimit` / `fileLimit` defaults | 100 / 10,000. veil sends 500 / 25,000. | ✅ | OpenAPI descriptions |
 | Partial responses while a search runs | **none**: `/responses` and `?includeResponses=true` are both empty until the search ends | ✅ live 2026-10-12 (check-search) | |
-| Search duration | the quiet window resets with every answer (19–27 s seen at 8–15 s). veil stops at 15 s with `PUT /searches/{id}` (Cancel), which keeps the responses: 183/183 and 291/292 peers vs uncapped | ✅ live 2026-10-12 | |
+| Answer arrival | about 98% of answers within 3–4 s (timeline: 737 → 784 → 798 peers at 2 / 4 / 28 s; 106 → 182 → 184; 251 → 286 → 291) | ✅ live 2026-10-12 (check-search timeline) | |
+| Search duration (veil) | stops once growth is under 1% over 1 s (after 2.5 s, cap 6 s) using `PUT /searches/{id}` (Cancel, keeps responses): 4.9–6.9 s for 182–795 peers | ✅ live 2026-10-12 | |
 
 ## MusicBrainz / ListenBrainz
 
