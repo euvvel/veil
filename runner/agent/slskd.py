@@ -23,19 +23,21 @@ class Slskd:
             await asyncio.sleep(1)
         return False
 
-    async def search(self, text: str, timeout_s: int = 12, response_limit: int = 500, file_limit: int = 25000,
+    async def search(self, text: str, timeout_ms: int = 15000, response_limit: int = 500, file_limit: int = 25000,
                      snapshot_every_s: float = 5):
         """Run a search and yield (responses, state, done) snapshots while it runs, then once more at the end.
 
-        SearchRequest units (runner/reference/slskd-0.26.1-openapi.json): searchTimeout is in seconds
-        (default 15, minimum 5); responseLimit defaults to 100 and fileLimit to 10,000.
+        searchTimeout is in MILLISECONDS. slskd's API description says seconds, but SearchRequest.ToSearchOptions
+        passes it unchanged to Soulseek.NET's SearchOptions, which documents milliseconds (default 15000).
+        Sending 12 ended every search after 12 ms with 0 results (live, 2026-10-12).
+        responseLimit defaults to 100 and fileLimit to 10,000.
         """
         sid = str(uuid.uuid4())
-        body = {"id": sid, "searchText": text, "searchTimeout": timeout_s, "responseLimit": response_limit,
+        body = {"id": sid, "searchText": text, "searchTimeout": timeout_ms, "responseLimit": response_limit,
                 "fileLimit": file_limit, "filterResponses": True}
         (await self.c.post("/searches", json=body)).raise_for_status()
         state, last_snap, seen = "", time.monotonic(), 0
-        deadline = time.monotonic() + timeout_s + 20
+        deadline = time.monotonic() + timeout_ms / 1000 + 30
         try:
             while time.monotonic() < deadline:
                 s = (await self.c.get(f"/searches/{sid}")).json()

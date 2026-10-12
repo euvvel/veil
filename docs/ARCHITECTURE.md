@@ -112,7 +112,7 @@ Dispatch to Soulseek login takes about 20 s.
 
 **Agent loop**
 - **Search:**
-  - slskd with `searchTimeout` 12 s (seconds, not milliseconds), `responseLimit` 500, `fileLimit` 25,000.
+  - slskd with `searchTimeout` 15000 (milliseconds; see LIMITS), `responseLimit` 500, `fileLimit` 25,000.
   - Snapshots every 5 s while answers arrive.
   - Each snapshot is grouped by folder and trimmed to ≤ 120 folders × 40 audio files, keeping the best FLAC and MP3 folders.
 - **Jobs:**

@@ -1,0 +1,71 @@
+name: check-search
+
+# Diagnostic: the agent's real search against Soulseek, counts only.
+# Public repo: every step prints counts only. Container logs are never echoed.
+on: workflow_dispatch
+
+concurrency:
+  group: veil-runner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SLSKD_IMAGE: slskd/slskd@sha256:588af49abc3088d639c8f1174d3bfad6e92c093a275a593140e3ac9311ebf6c4 # 0.26.1
+
+jobs:
+  soulseek:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install httpx
+        run: pip install -q httpx==0.28.1 websockets==17.1 mutagen==1.48.1
+
+      - name: Start slskd
+        env:
+          SLSK_USERNAME: ${{ secrets.SLSK_USERNAME }}
+          SLSK_PASSWORD: ${{ secrets.SLSK_PASSWORD }}
+        run: |
+          key=$(head -c 24 /dev/urandom | base64 | tr -dc A-Za-z0-9)
+          echo "::add-mask::$key"
+          echo "SLSKD_API_KEY=$key" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/out"
+          umask 077
+          {
+            echo "SLSKD_SLSK_USERNAME=$SLSK_USERNAME"
+            echo "SLSKD_SLSK_PASSWORD=$SLSK_PASSWORD"
+            echo "SLSKD_API_KEY=$key"
+            echo "SLSKD_NO_HTTPS=true"
+            echo "SLSKD_NO_VERSION_CHECK=true"
+            echo "SLSKD_SLSK_NO_DNET=true"
+            echo "SLSKD_DOWNLOADS_DIR=/downloads"
+          } > "$RUNNER_TEMP/slskd.env"
+          t0=$(date +%s)
+          docker pull -q "$SLSKD_IMAGE" >/dev/null
+          docker run -d --name slskd -p 127.0.0.1:5030:5030 \
+            --env-file "$RUNNER_TEMP/slskd.env" -v "$RUNNER_TEMP/dl:/downloads" "$SLSKD_IMAGE" >/dev/null
+          rm -f "$RUNNER_TEMP/slskd.env"
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null -H "X-API-Key: $key" http://127.0.0.1:5030/api/v0/application && break
+            sleep 1
+          done
+          echo "[spike] slskd api ready after $(( $(date +%s) - t0 ))s"
+
+      - name: Check search
+        working-directory: runner
+        env:
+          SPIKE_QUERIES: ${{ secrets.SPIKE_QUERIES }}
+        run: python check/search.py
+
+      - name: Stop slskd
+        if: always()
+        run: |
+          docker stop -t 20 slskd >/dev/null 2>&1 || true
+          sudo rm -rf "$RUNNER_TEMP/dl"
