@@ -14,7 +14,8 @@ export interface Folder {
   files: WireFile[];
 }
 
-export type JobState = "pending" | "queued" | "downloading" | "uploading" | "delivered" | "failed";
+export type JobState = "pending" | "queued" | "downloading" | "uploading" | "awaiting" | "delivered" | "failed";
+export type JobMode = "chat" | "direct";
 export const TERMINAL: JobState[] = ["delivered", "failed"];
 
 export interface TrackMeta {
@@ -36,6 +37,7 @@ export interface JobStateMsg {
   place?: number;
   kbps?: number;
   error?: string;
+  token?: string; // awaiting: one-time token for the direct link
   track?: TrackMeta;
 }
 

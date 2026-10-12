@@ -1,11 +1,13 @@
 """veil runner agent: slskd ⇄ Hub ⇄ courier. Public logs: counts and states only.
 
 Env: HUB_URL, RUNNER_SECRET, SLSKD_URL, SLSKD_API_KEY, DL_DIR, COURIER_BOT_TOKEN,
-     [COURIER_API_BASE, MAX_UPLOAD_MB, SESSION_ID, GITHUB_RUN_ID, IDLE_S, MAX_S, DELETE_CMD]
+     [COURIER_API_BASE, MAX_UPLOAD_MB, SESSION_ID, GITHUB_RUN_ID, IDLE_S, MAX_S, DELETE_CMD,
+      DIRECT_BASE, DOOR_PORT]  (DIRECT_BASE: public https URL of the named tunnel, D8)
 """
 
 import asyncio
 import os
+import secrets
 import shlex
 import subprocess
 import time
@@ -13,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .courier import Courier, CourierError, read_tags
+from .door import Door, allowed_origins
 from .hub import HubLink
 from .slskd import Slskd
 
@@ -22,6 +25,8 @@ PROGRESS_EVERY_S = 2
 POSITION_EVERY_S = 30
 HEARTBEAT_S = 30
 MAX_FOLDERS, MAX_FILES = 25, 25
+AWAIT_S = 30 * 60  # how long a direct file waits at the veil's edge
+RELEASE_GRACE_S = 90  # after release, give a just-accepted download time to start
 
 
 def log(msg: str) -> None:
@@ -84,8 +89,14 @@ class Job:
     size: int
     chat_id: int
     caption: str
+    mode: str = "chat"
     batch_id: str | None = None
     transfer_id: str | None = None
+    token: str | None = None
+    local: Path | None = None
+    tags: dict | None = None
+    offered_at: float = 0
+    released_at: float = 0
     state: str = "queued"
     pct: float = 0
     last_sent: float = 0
@@ -109,11 +120,14 @@ class Agent:
         self.searching = 0
         self.stop = asyncio.Event()
         self.draining = False
+        self.direct_base = (e.get("DIRECT_BASE") or "").rstrip("/")
+        self.door = Door(int(e.get("DOOR_PORT", "8090")), allowed_origins(e["HUB_URL"])) if self.direct_base else None
         self.link = HubLink(e["HUB_URL"], e["RUNNER_SECRET"], self.hello, self.on_message)
 
     def hello(self) -> dict:
         return {"run_id": int(os.environ.get("GITHUB_RUN_ID", "0")), "session_id": os.environ.get("SESSION_ID") or None,
-                "agent": "veil-agent/1", "active_jobs": list(self.jobs), "max_upload_mb": self.max_upload_mb}
+                "agent": "veil-agent/1", "active_jobs": list(self.jobs), "max_upload_mb": self.max_upload_mb,
+                "direct_base": self.direct_base or None}
 
     def touch(self) -> None:
         self.last_activity = time.monotonic()
@@ -131,9 +145,16 @@ class Agent:
         if t == "search.start" and not self.draining:
             asyncio.create_task(self.run_search(d["search_id"], d["query"]))
         elif t == "job.start" and not self.draining and d["job_id"] not in self.jobs:
-            job = Job(d["job_id"], d["peer"], d["path"], int(d["size"]), int(d["chat_id"]), d.get("caption") or "")
+            job = Job(d["job_id"], d["peer"], d["path"], int(d["size"]), int(d["chat_id"]), d.get("caption") or "", mode=d.get("mode") or "chat")
+            if job.mode == "direct" and not self.door:
+                self.report(job, "failed", error="too_large")
+                return
             self.jobs[job.id] = job
             await self.start_job(job)
+        elif t == "job.release" and d.get("job_id") in self.jobs:
+            job = self.jobs[d["job_id"]]
+            if job.state == "awaiting" and not job.released_at:
+                job.released_at = time.monotonic()
         elif t == "job.cancel" and d.get("job_id") in self.jobs:
             job = self.jobs.pop(d["job_id"])
             if job.transfer_id:
@@ -174,7 +195,7 @@ class Agent:
 
     async def poll_jobs(self) -> None:
         for job in list(self.jobs.values()):
-            if job.state in ("uploading",) or not job.batch_id:
+            if job.state in ("uploading", "awaiting") or not job.batch_id:
                 continue
             t = await self.slskd.transfer(job.batch_id)
             if not t:
@@ -222,6 +243,9 @@ class Agent:
             pass
 
     async def deliver(self, job: Job, kbps: int) -> None:
+        if job.mode == "direct":
+            await self.offer(job)
+            return
         self.report(job, "uploading")
         path = None
         try:
@@ -242,6 +266,47 @@ class Agent:
                 self.remove(path)
             self.jobs.pop(job.id, None)
 
+    # ------------------------------------------------------------ direct crossing (D8)
+
+    async def offer(self, job: Job) -> None:
+        """Keep the finished file untouched behind the door until the member takes it."""
+        path = self.find_file(job)
+        if not path or not self.door:
+            self.jobs.pop(job.id, None)
+            self.report(job, "failed", error="not_found")
+            return
+        job.local, job.tags = path, read_tags(path)
+        job.token = secrets.token_urlsafe(24)
+        job.offered_at = time.monotonic()
+        self.door.offer(job.token, path, path.name)
+        self.report(job, "awaiting", token=job.token)
+        log(f"awaiting direct crossing: {path.stat().st_size // 1048576} MB")
+
+    def settle_direct(self) -> None:
+        if not self.door:
+            return
+        now = time.monotonic()
+        for job in [j for j in self.jobs.values() if j.state == "awaiting" and j.token]:
+            if self.door.busy(job.token):
+                continue
+            if job.released_at and now - job.released_at >= RELEASE_GRACE_S:
+                self.close_direct(job, "delivered")
+            elif now - job.offered_at >= AWAIT_S:
+                self.close_direct(job, "failed", "unclaimed")
+
+    def close_direct(self, job: Job, state: str, error: str | None = None) -> None:
+        if self.door and job.token:
+            self.door.withdraw(job.token)
+        if job.local:
+            self.remove(job.local)
+        self.jobs.pop(job.id, None)
+        if state == "delivered":
+            self.report(job, "delivered", track={**(job.tags or {}), "message_id": None})
+            log("direct crossing done")
+        else:
+            self.report(job, "failed", error=error)
+            log(f"direct crossing closed: {error}")
+
     # ------------------------------------------------------------ lifecycle
 
     async def heartbeat(self) -> None:
@@ -256,6 +321,7 @@ class Agent:
                 continue
             try:
                 await self.poll_jobs()
+                self.settle_direct()
             except Exception as e:  # noqa: BLE001
                 log(f"poll error: {type(e).__name__}")
             idle = not self.jobs and not self.searching and time.monotonic() - self.last_activity > self.idle_s
@@ -274,6 +340,9 @@ class Agent:
         if uploads:
             await asyncio.wait(uploads, timeout=120)
         for job in list(self.jobs.values()):
+            if job.state == "awaiting":
+                self.close_direct(job, "delivered" if job.released_at else "failed", None if job.released_at else "unclaimed")
+                continue
             if job.state == "uploading":
                 continue
             if job.transfer_id:
@@ -294,6 +363,9 @@ class Agent:
             log("soulseek login failed")
             return
         log("soulseek logged in")
+        if self.door:
+            await self.door.start()
+            log("door open behind the tunnel")
         await asyncio.gather(self.link.run(self.stop), self.heartbeat(), self.watch())
 
 

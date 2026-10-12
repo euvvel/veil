@@ -12,6 +12,8 @@ export interface Env {
   /** "api" (default): replies are sent with an explicit Bot API call and the result is logged.
    *  "webhook": replies ride on the webhook response (local tests read them there). */
   REPLY_MODE?: string;
+  /** Public https origin of the mini app (secret, so the hostname stays out of the repo). */
+  APP_URL?: string;
 
   VEIL_BOT_TOKEN: string;
   WEBHOOK_SECRET: string;

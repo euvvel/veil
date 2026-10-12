@@ -14,7 +14,7 @@ Our own protocol: JSON text frames over the runner's WebSocket (`/hub/runner`, `
 
 | type | data | when |
 |---|---|---|
-| `runner.hello` | `run_id`, `session_id`, `agent`, `active_jobs: string[]`, `max_upload_mb` | on every (re)connect |
+| `runner.hello` | `run_id`, `session_id`, `agent`, `active_jobs: string[]`, `max_upload_mb`, `direct_base` (tunnel URL, if any) | on every (re)connect |
 | `runner.heartbeat` | `active_jobs: number`, `idle_s` | every 30 s |
 | `search.results` | `search_id`, `responses`, `files`, `folders: Folder[]` | search finished (one message, pre-trimmed) |
 | `job.state` | `job_id`, `state`, plus `pct`, `place`, `kbps`, `error`, `track` | state change, or progress at most every 2 s |
@@ -35,8 +35,9 @@ Job `state` values:
 | `queued` | `place` |
 | `downloading` | `pct`, `kbps` |
 | `uploading` | |
+| `awaiting` | `token`: direct mode, the file is ready behind the tunnel (D8) |
 | `delivered` | `track` |
-| `failed` | `error` category: `connect`, `timeout`, `rejected`, `queue`, `not_shared`, `too_large`, `not_found`, `upload`, `cancelled`, `unknown` |
+| `failed` | `error` category: `connect`, `timeout`, `rejected`, `queue`, `not_shared`, `too_large`, `not_found`, `upload`, `cancelled`, `unclaimed`, `unknown` |
 | `pending` | handed back during a drain |
 
 `track` = `{ artist, title, album, year, format, bitrate, mb_recording, mb_release, message_id }`, filled from the file's tags where present.
@@ -47,7 +48,8 @@ Job `state` values:
 |---|---|
 | `hub.welcome` | `state` |
 | `search.start` | `search_id`, `query` |
-| `job.start` | `job_id`, `peer`, `path`, `size`, `chat_id`, `caption` |
+| `job.start` | `job_id`, `peer`, `path`, `size`, `chat_id`, `caption`, `mode` (`chat` or `direct`) |
+| `job.release` | `job_id`: the member has the file; delete it and report `delivered` |
 | `job.cancel` | `job_id` |
 | `session.drain` | — |
 

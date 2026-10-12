@@ -64,6 +64,26 @@ jobs:
           done
           echo "[runner] slskd api up"
 
+      - name: Open the door (named tunnel, D8)
+        env:
+          TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
+          DIRECT_BASE: ${{ secrets.DIRECT_BASE }}
+        run: |
+          if [ -z "$TUNNEL_TOKEN" ] || [ -z "$DIRECT_BASE" ]; then echo "[runner] no tunnel configured; direct crossing off"; exit 0; fi
+          bin="$RUNNER_TEMP/cloudflared"
+          curl -sSL -o "$bin" https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64
+          echo "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2  $bin" | sha256sum -c --quiet
+          chmod +x "$bin"
+          # cloudflared reads TUNNEL_TOKEN from the environment; its output is discarded (public logs).
+          nohup "$bin" tunnel --no-autoupdate --metrics 127.0.0.1:20241 run >/dev/null 2>&1 &
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:20241/ready && break; sleep 1; done
+          if curl -sf -o /dev/null http://127.0.0.1:20241/ready; then
+            echo "DIRECT_BASE=$DIRECT_BASE" >> "$GITHUB_ENV"
+            echo "[runner] door tunnel ready"
+          else
+            echo "[runner] tunnel not ready; direct crossing off"
+          fi
+
       - name: Run agent
         working-directory: runner
         env:
@@ -81,6 +101,7 @@ jobs:
       - name: Stop slskd and leave nothing behind
         if: always()
         run: |
+          pkill -f "cloudflared tunnel" >/dev/null 2>&1 || true
           docker stop -t 20 slskd >/dev/null 2>&1 || true
           docker rm -f slskd >/dev/null 2>&1 || true
           sudo rm -rf "$RUNNER_TEMP/dl"

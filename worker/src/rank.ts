@@ -133,6 +133,16 @@ function quality(t: TrackItem): string {
   return `${t.ext.toUpperCase()}${t.br ? ` ${t.br}` : ""}`;
 }
 
+/** Name and one-line detail for the mini app (no peer names). */
+export function describe(i: Item): { name: string; detail: string } {
+  const slot = i.free ? "free" : `queue ${i.q}`;
+  if (i.kind === "t") return { name: basename(i.path), detail: [quality(i), mb(i.size), mmss(i.len), slot].filter(Boolean).join(" · ") };
+  return {
+    name: dirname(i.d + "/x"),
+    detail: [`${i.files.length} files`, i.exts.map((e) => e.toUpperCase()).join("/"), mb(i.size), slot].join(" · "),
+  };
+}
+
 export function line(i: Item, n: number, maxUploadMb: number): string {
   const slot = i.free ? "free" : `queue ${i.q}`;
   const tooBig = (size: number) => size > maxUploadMb * 1024 * 1024;

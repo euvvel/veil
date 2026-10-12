@@ -21,10 +21,14 @@ Status: **draft**. The steps get filled in as each phase lands. Anything marked 
 
 ### Cloudflare
 1. `wrangler d1 create veil`, put the id in `worker/wrangler.jsonc`, then `wrangler d1 migrations apply veil --remote`.
-2. `wrangler deploy`, then `wrangler secret bulk <json>` with the Worker secrets listed in [ARCHITECTURE.md](ARCHITECTURE.md#secrets).
+2. Build the mini app first (`cd app && npm run build`, which writes `worker/public/`), then `wrangler deploy`, then `wrangler secret bulk <json>` with the Worker secrets listed in [ARCHITECTURE.md](ARCHITECTURE.md#secrets).
 3. **Custom domain:** workers.dev doesn't serve on this account. Attach a hostname with `PUT /accounts/{id}/workers/domains` (`hostname`, `service: "veil"`, `zone_id`, `environment: "production"`). The hostname stays out of the repo, and a `wrangler deploy` keeps it attached.
 4. Set the bot webhook: `setWebhook` with `url=<domain>/tg/webhook`, `secret_token=WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`. Clear the public menu with `deleteMyCommands`, `setMyDescription ""` and `setMyShortDescription ""`.
 5. GitHub secrets for the runner: `HUB_URL=<domain>`, `RUNNER_SECRET`.
+6. Worker secret `APP_URL=https://<domain>` enables the mini app menu button and the "Receive it" button.
+7. Direct crossing (D8):
+   - Create a named tunnel `veil-door` with ingress `<door host>` → `http://127.0.0.1:8090`, and a proxied CNAME `<door host>` → `<tunnel id>.cfargotunnel.com`.
+   - GitHub secrets: `TUNNEL_TOKEN`, `DIRECT_BASE=https://<door host>`. Without them, direct crossing is off and oversize files are refused.
 
 ## Access
 1. Claim: open `t.me/<veil_bot>?start=<claim code>` once. You become admin. The claim code stops working once a member exists.

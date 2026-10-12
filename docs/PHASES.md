@@ -6,7 +6,7 @@
 | 1 | Runner spike (riskiest unknowns) | A ✅ B ✅ · local Bot API pending api_id |
 | 2 | Front door: Worker, auth, D1, Hub DO, dispatch, bot webhook | ✅ done (2026-10-12) |
 | 3 | MVP loop: search → download → deliver, idle shutdown, history | ✅ done (2026-10-12) |
-| 4 | Mini app UI (Seek, Crossings, status bar) | |
+| 4 | Mini app UI (Seek, Crossings, status bar) + direct crossing (D8) | built, live test pending (tunnel needs token permissions) |
 | 5 | Beyond (Explore feeds, weekly mix, feedback) | |
 | 6 | Wishlist, invites, AI query rewrite and filename cleanup | |
 

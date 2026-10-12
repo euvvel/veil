@@ -77,7 +77,7 @@ async function seek(env: Env, member: M.Member, chatId: number, arg: string): Pr
     words = last.query;
     if (!FORMATS.includes(first)) fmt = last.format_filter;
   }
-  const state = await hub(env).search(member, chatId, words.slice(0, 200), fmt);
+  const { state } = await hub(env).search(member, chatId, words.slice(0, 200), fmt);
   return say(
     chatId,
     state === "ready" ? `Listening beyond · Searching “${words}”…` : `${label(state === "offline" ? "booting" : state)}\nI'll seek “${words}” as soon as the veil opens.`,
@@ -94,12 +94,20 @@ async function history(env: Env, member: M.Member, chatId: number): Promise<Resp
   return say(chatId, `Last crossings:\n${lines.join("\n")}`);
 }
 
-/** Commands are scoped to member chats only, so strangers see an empty menu. */
+/** Commands and the mini app button are scoped to member chats only, so strangers see nothing. */
 const setCommands = (env: Env, chatId: number, role: M.Role) =>
-  tg(env, "setMyCommands", { commands: COMMANDS[role], scope: { type: "chat", chat_id: chatId } });
+  Promise.all([
+    tg(env, "setMyCommands", { commands: COMMANDS[role], scope: { type: "chat", chat_id: chatId } }),
+    env.APP_URL
+      ? tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "web_app", text: "veil", web_app: { url: env.APP_URL } } })
+      : Promise.resolve(),
+  ]);
 
 const clearCommands = (env: Env, chatId: number) =>
-  tg(env, "deleteMyCommands", { scope: { type: "chat", chat_id: chatId } });
+  Promise.all([
+    tg(env, "deleteMyCommands", { scope: { type: "chat", chat_id: chatId } }),
+    tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "default" } }),
+  ]);
 
 function help(role: M.Role): string {
   return COMMANDS[role].map((c) => `/${c.command} · ${c.description}`).join("\n");

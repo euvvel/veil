@@ -20,6 +20,7 @@ const ERRORS: Record<string, string> = {
   upload: "Telegram refused the file",
   cancelled: "cancelled",
   gave_up: "gave up after three openings",
+  unclaimed: "not received in time",
 };
 
 export const errorText = (e?: string) => ERRORS[e ?? ""] ?? "unknown";
@@ -34,6 +35,8 @@ function single(p: JobProgress): string {
       return `Crossing over · ${Math.round(p.pct ?? 0)}%`;
     case "uploading":
       return "Arriving";
+    case "awaiting":
+      return "At the veil's edge · open veil to receive";
     case "delivered":
       return "Crossed";
     case "failed":
@@ -41,7 +44,7 @@ function single(p: JobProgress): string {
   }
 }
 
-const ORDER: JobState[] = ["downloading", "uploading", "queued", "pending"];
+const ORDER: JobState[] = ["awaiting", "downloading", "uploading", "queued", "pending"];
 
 export function crossingText(name: string, jobs: JobProgress[]): string {
   if (jobs.length === 1) return `${single(jobs[0]!)} · ${name}`;
