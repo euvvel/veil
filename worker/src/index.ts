@@ -59,6 +59,13 @@ app.get("/hub/app", async (c) => {
   return hub(c.env).fetch(new Request(`https://hub/app?t=${t}`, c.req.raw));
 });
 
+/** The browser page outside Telegram (Android share path, D8) releases with the door token it was given. */
+app.post("/out/release", async (c) => {
+  const { t } = await c.req.json<{ t?: string }>().catch(() => ({ t: undefined }));
+  if (typeof t !== "string" || !/^[A-Za-z0-9_-]{20,64}$/.test(t)) return notFound();
+  return (await hub(c.env).releaseByToken(t)) ? c.json({ ok: true }) : notFound();
+});
+
 app.use("/api/*", async (c, next) => {
   const auth = c.req.header("Authorization") ?? "";
   const who = await memberFrom(c.env, auth.startsWith("tma ") ? auth.slice(4) : undefined);
@@ -132,5 +139,6 @@ app.post("/api/direct/release", async (c) => {
 app.all("/api/*", notFound);
 app.all("/tg/*", notFound);
 app.all("/hub/*", notFound);
+app.all("/out/*", notFound);
 
 export default app satisfies ExportedHandler<Env>;

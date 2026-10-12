@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, live, type HubEvent, type Me, type Prefs, type SessionState } from "./api.ts";
 import { Crossings } from "./crossings.tsx";
-import { Receive } from "./receive.tsx";
+import { Out, Receive } from "./receive.tsx";
 import { Seek } from "./seek.tsx";
 import "./styles.css";
 import { applyTheme, haptic, tg } from "./tg.ts";
@@ -147,4 +147,13 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById("root")!);
+function Root() {
+  // Outside Telegram, with a door link in the hash: the Android share page (no login needed).
+  if (location.hash.startsWith("#out?")) {
+    applyTheme();
+    return <Out />;
+  }
+  return <App />;
+}
+
+render(<Root />, document.getElementById("root")!);

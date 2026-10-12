@@ -85,6 +85,20 @@ r = await api("GET", "/api/crossings");
 assert.equal(r.body.active.length, 0); assert.match(JSON.stringify(r.body.history), /NIN/); ok("history updated, nothing left active");
 assert.equal((await api("GET", `/api/direct/${gid}`)).body.length, 0); ok("link gone after delivery");
 
+// the browser page outside Telegram releases with the door token alone
+r = await api("POST", "/api/cross", { sid, index: 1 });
+const js3 = await next("job.start");
+const TOK = "Abc_def-ghi0123456789xyzABCDEFGH";
+send("job.state", { job_id: js3.data.job_id, state: "awaiting", token: TOK });
+await sleep(300);
+let o = await fetch(`${BASE}/out/release`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: "Wrong_token-0000000000000000000" }) });
+assert.equal(o.status, 404); ok("out release with a wrong token → 404");
+o = await fetch(`${BASE}/out/release`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: TOK }) });
+assert.equal(o.status, 200);
+assert.equal((await next("job.release")).data.job_id, js3.data.job_id); ok("out release with the door token → runner releases");
+send("job.state", { job_id: js3.data.job_id, state: "delivered", track: { format: "flac" } });
+await sleep(300);
+
 // without a tunnel, oversize is refused
 send("runner.hello", { run_id: 1, agent: "fake", active_jobs: [], max_upload_mb: 50 });
 await next("hub.welcome");
