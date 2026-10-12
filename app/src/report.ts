@@ -14,6 +14,11 @@ export function report(error: unknown, where: string): void {
 }
 
 export function watchErrors(): void {
-  addEventListener("error", (ev) => report(ev.error ?? ev.message, "window"));
+  addEventListener("error", (ev) => {
+    // "Script error." is all a browser reveals about a failure inside a cross-origin script (Telegram's SDK);
+    // it carries nothing to act on, so it is not reported.
+    if (!ev.error && /^Script error\.?$/.test(ev.message)) return;
+    report(ev.error ?? ev.message, "window");
+  });
   addEventListener("unhandledrejection", (ev) => report(ev.reason, "promise"));
 }
