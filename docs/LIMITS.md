@@ -89,3 +89,13 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | MusicBrainz rate limit | ~1 req/s per IP, meaningful User-Agent required | ⚠ check musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting |
 | ListenBrainz similar-artists / popularity endpoints | exist (labs API), exact shape unknown | ⚠ check listenbrainz.readthedocs.io before Phase 5 |
 | Cover Art Archive hotlinking by release MBID | allowed | ⚠ check coverartarchive.org docs |
+
+## Cloudflare Tunnel (direct crossing, D8)
+
+| Item | Value | Status | Source |
+|---|---|---|---|
+| cloudflared | 2026.9.3, linux-amd64 sha256 `77e26d8d…3fbac2` (matches the release notes) | ✅ | github.com/cloudflare/cloudflared releases |
+| Remotely-managed tunnel | `POST /accounts/{id}/cfd_tunnel` (`config_src: cloudflare`), ingress via `PUT …/configurations`, token via `GET …/token`, proxied CNAME → `<id>.cfargotunnel.com` | ✅ live 2026-10-12 | |
+| Token permissions | Account · Cloudflare Tunnel · Edit, Zone · DNS · Edit | ✅ live | |
+| `cloudflared … --metrics 127.0.0.1:20241` `/ready` | 200 once connected (about 3 s here) | ✅ live (local) / 🧪 on GitHub runner | |
+| Door through the tunnel | 5 MB file byte-identical, `audio/flac`, CORS for web.telegram.org, `Content-Disposition: attachment`; unknown paths 404 | ✅ live 2026-10-12 | |
