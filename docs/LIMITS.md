@@ -99,3 +99,5 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Token permissions | Account · Cloudflare Tunnel · Edit, Zone · DNS · Edit | ✅ live | |
 | `cloudflared … --metrics 127.0.0.1:20241` `/ready` | 200 once connected (about 3 s here) | ✅ live (local) / 🧪 on GitHub runner | |
 | Door through the tunnel | 5 MB file byte-identical, `audio/flac`, CORS for web.telegram.org, `Content-Disposition: attachment`; unknown paths 404 | ✅ live 2026-10-12 | |
+| Web Share (`navigator.share`) with files, Chromium | ≤ 10 files, **≤ 50 MB total**; larger is rejected with `NotAllowedError` (no share sheet) | ✅ source + live (Chrome 155, Android 14) | chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/modules/webshare/navigator_share.cc |
+| Telegram Android mini app web view | `navigator.canShare({files})` is false | ✅ live 2026-10-12 | owner's phone |

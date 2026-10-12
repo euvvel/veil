@@ -367,14 +367,6 @@ export class Hub extends DurableObject<Env> {
     return files;
   }
 
-  /** Release by the door token itself (the browser page outside Telegram holds only that capability). */
-  async releaseByToken(token: string): Promise<boolean> {
-    for (const [key, t] of await this.ctx.storage.list<string>({ prefix: "dj:" })) {
-      if (t === token) return this.toRunner("job.release", { job_id: key.slice(3) });
-    }
-    return false;
-  }
-
   /** The member has the file: the runner deletes it and reports delivered. */
   async appRelease(member: Member, jobId: string): Promise<boolean> {
     const gid = await this.ctx.storage.get<string>(`jg:${jobId}`);

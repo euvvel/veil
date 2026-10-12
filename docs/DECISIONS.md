@@ -54,3 +54,10 @@ Short records of decisions that shape the project. Newest at the bottom.
   - The runner keeps an unclaimed file at most 30 min, then deletes it.
   - The runner stays up until the file is claimed or that time passes.
   - When an API ID becomes available, courier sends up to 2 GB automatically, and this path remains the fallback above 2 GB.
+
+### D8a · Direct crossing ends on the device, not in the chat (2026-10-12)
+- **Finding:** Chromium refuses Web Share above **50 MB** in total: `kMaxSharedFileBytes = 50U * 1024 * 1024` in `third_party/blink/renderer/modules/webshare/navigator_share.cc`, rejecting with `NotAllowedError: Permission denied`. Every direct file is over 50 MB by definition, so the "Put it in the chat" share path from D8 can never work. Owner's test 2026-10-12: Chrome 155 on Android, 51 MB, silent failure.
+- **Decision:**
+  - Remove the share path and the browser page.
+  - Direct crossing offers **Save to device** (`downloadFile`), then tells the member how to attach it to a chat themselves (📎 → File).
+- **Consequence:** automatic delivery into the chat above 50 MB needs the local Bot API server, which needs an API ID (Route A). There is no other honest path.

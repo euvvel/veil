@@ -28,7 +28,6 @@ export interface WebApp {
     selectionChanged(): void;
   };
   downloadFile?(p: { url: string; file_name: string }, cb?: (accepted: boolean) => void): void;
-  openLink(url: string, options?: { try_instant_view?: boolean }): void;
   showAlert(msg: string, cb?: () => void): void;
 }
 
