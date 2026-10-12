@@ -84,7 +84,7 @@ Short records of decisions that shape the project. Newest at the bottom.
   - **Sources:** ListenBrainz similar artists (labs API) and each artist's release groups with listen counts (popularity API).
   - **Feeds:** More like this, From the same hand, Deep cuts (1–15% of an artist's best-known listens), This week's veil, and an on-demand Rabbit hole.
 - **Verification:** every shown suggestion is a release group confirmed by a MusicBrainz lookup (≤ 1 request/s). The lookup's secondary types drop live sets, compilations, DJ-mixes and the like.
-- **AI:** Workers AI (`@cf/meta/llama-3.1-8b-instruct`, JSON mode) receives numbered candidates with plain facts. It returns indices and one-line reasons, and is validated against the list. Without it, a heuristic order with template reasons is used. The Rabbit hole uses template reasons.
+- **AI:** Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`, backup `llama-4-scout-17b`, JSON mode) receives numbered candidates with plain facts. It was first built on llama-3.1-8b, which had been deprecated; a live probe chose the replacement. It returns indices and one-line reasons, and is validated against the list. Without it, a heuristic order with template reasons is used. The Rabbit hole uses template reasons.
 - **Scheduling:** one Seer Durable Object per member, driven by alarms rather than cron triggers (the account's other Workers share the free plan's 5 cron triggers).
   - A rebuild runs about 10 minutes after something crosses, plus weekly (Monday 06:00 UTC).
   - Each step stays well inside the per-invocation limits.

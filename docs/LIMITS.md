@@ -121,4 +121,6 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Workers AI JSON mode | `response_format: {type: "json_schema", json_schema}`; supported by llama-3.1-8b-instruct, llama-3.3-70b-fp8-fast and a few others | ✅ docs | developers.cloudflare.com/workers-ai/features/json-mode |
 | Workers AI cost | llama-3.1-8b-instruct: 25,608 neurons / M input, 75,147 / M output → about 110 neurons per ranking call (free: 10,000 / day) | ✅ docs | developers.cloudflare.com/workers-ai/platform/pricing |
 | AI binding on deploy | worked with the existing token (no extra permission) | ✅ live | |
+| Model availability | `llama-3.1-8b-instruct` **deprecated 2026-05-30** (AiError 5028), although the JSON-mode page still lists it. Probe with the real request: llama-3.3-70b fp8-fast gave valid JSON in 2.3 s (~24 neurons for 5 candidates); llama-4-scout valid (backup); qwen3-30b and gpt-oss-20b valid but slow; gemma-4, glm-4.7 and mistral-small gave no usable JSON | ✅ live probe 2026-10-12 | |
+| Free neurons are **per account** | 10,000 / day shared by every Worker on the account. On 2026-10-12 the allocation was used up by other usage (AiError 4006); veil falls back to the plain order. Resets 00:00 UTC. | ✅ live | |
 | A full gather (3 seeds, real APIs) | about 130–160 s in the background, 31–39 suggestions | ✅ local run | `test/beyond-smoke.mjs` |

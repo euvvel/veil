@@ -103,3 +103,11 @@ test("secondary types: live sets and compilations are not wanted", async () => {
   assert.equal(wanted("Remix"), true);
   assert.equal(wanted("Soundtrack"), true);
 });
+
+test("model answers are read in both shapes", async () => {
+  const { answerBody } = await import("../src/beyond/ai.ts");
+  assert.deepEqual(answerBody({ response: { picks: [] } }), { picks: [] });
+  assert.deepEqual(answerBody({ response: '{"picks":[]}' }), { picks: [] });
+  assert.deepEqual(answerBody({ choices: [{ message: { content: '{"picks":[1]}' } }] }), { picks: [1] });
+  assert.equal(answerBody({ response: "not json" }), null);
+});

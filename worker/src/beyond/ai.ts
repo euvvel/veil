@@ -4,7 +4,11 @@
 
 import type { Candidate, Feed } from "./pick.ts";
 
-export const MODEL = "@cf/meta/llama-3.1-8b-instruct"; // supports JSON mode (developers.cloudflare.com/workers-ai/features/json-mode)
+// Probed live with the exact request below (2026-10-12): llama-3.1-8b-instruct was deprecated on 2026-05-30
+// (AiError 5028) although the JSON-mode page still lists it. llama-3.3-70b fp8-fast answered valid JSON in 2.3 s
+// for ~24 neurons per 5 candidates; llama-4-scout is the backup. gemma-4, glm-4.7 and mistral-small did not
+// return usable JSON within the token limit.
+export const MODELS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-4-scout-17b-16e-instruct"] as const;
 
 export interface Pick {
   c: Candidate;
@@ -60,42 +64,60 @@ export function acceptPicks(answer: unknown, cands: Candidate[], n: number): Pic
   return out;
 }
 
+/** Models answer as `{ response }` (object or JSON string) or OpenAI-style `choices[0].message.content`. */
+export function answerBody(res: unknown): unknown {
+  const r = res as { response?: unknown; choices?: { message?: { content?: unknown } }[] };
+  const body = r?.response ?? r?.choices?.[0]?.message?.content;
+  if (typeof body !== "string") return body;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+const SYSTEM =
+  "You rank music suggestions for one listener. Use ONLY the numbered candidates given; never add others. " +
+  "Prefer variety (different artists) and records that fit the facts. For each pick write one short reason, " +
+  `addressed to the listener as "you" (at most ${MAX_REASON} characters), using only the facts given. ` +
+  "Do not invent facts, dates, genres, members or names.";
+
 export async function rank(ai: Ai | undefined, feed: Feed, cands: Candidate[], n: number): Promise<{ picks: Pick[]; by: "ai" | "plain" }> {
   if (!cands.length) return { picks: [], by: "plain" };
   if (!ai) return { picks: fallback(cands, n), by: "plain" };
   const list = cands.map((c, i) => `${i}. ${c.artist} — ${c.title}${c.year ? ` (${c.year})` : ""} [${c.kind}] · ${c.facts}`).join("\n");
-  try {
-    const res = (await ai.run(MODEL as Parameters<Ai["run"]>[0], {
-      messages: [
-        {
-          role: "system",
-          content:
-            "You rank music suggestions for one listener. Use ONLY the numbered candidates given; never add others. " +
-            "Prefer variety (different artists) and records that fit the facts. For each pick write one short, concrete reason " +
-            `(at most ${MAX_REASON} characters) that uses only the facts given. Do not invent facts, dates, genres or names.`,
-        },
-        { role: "user", content: `Feed: ${FEED_BRIEF[feed]}. Pick up to ${n}, best first.\n\n${list}` },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          type: "object",
-          properties: {
-            picks: {
-              type: "array",
-              items: { type: "object", properties: { i: { type: "integer" }, reason: { type: "string" } }, required: ["i", "reason"] },
+  for (const model of MODELS) {
+    try {
+      const res = await ai.run(model as Parameters<Ai["run"]>[0], {
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: `Feed: ${FEED_BRIEF[feed]}. Pick up to ${n}, best first.\n\n${list}` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            type: "object",
+            properties: {
+              picks: {
+                type: "array",
+                items: { type: "object", properties: { i: { type: "integer" }, reason: { type: "string" } }, required: ["i", "reason"] },
+              },
             },
+            required: ["picks"],
           },
-          required: ["picks"],
         },
-      },
-      max_tokens: 900,
-    } as never)) as { response?: unknown };
-    const body = typeof res.response === "string" ? JSON.parse(res.response) : res.response;
-    const picks = acceptPicks(body, cands, n);
-    if (picks.length >= Math.min(n, cands.length) / 2) return { picks, by: "ai" };
-  } catch {
-    // fall through to the plain order
+        max_tokens: 1200,
+      } as never);
+      const picks = acceptPicks(answerBody(res), cands, n);
+      console.log(JSON.stringify({ at: "ai", feed, model, candidates: cands.length, picks: picks.length }));
+      if (picks.length) {
+        // The model's picks lead; the plain order fills the rest (never all-or-nothing).
+        const taken = new Set(picks.map((p) => p.c.mbid));
+        return { picks: [...picks, ...fallback(cands.filter((c) => !taken.has(c.mbid)), n - picks.length)], by: "ai" };
+      }
+    } catch (e) {
+      console.log(JSON.stringify({ at: "ai", feed, model, candidates: cands.length, error: String(e).slice(0, 300) }));
+    }
   }
   return { picks: fallback(cands, n), by: "plain" };
 }

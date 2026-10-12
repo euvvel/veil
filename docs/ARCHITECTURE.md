@@ -136,7 +136,7 @@ One Durable Object per member gathers Beyond in alarm-driven steps (D11):
 | **seeds** | Weighted artists from `tracks`/`jobs`. Names are resolved to MusicBrainz ids once and cached in `artists`. |
 | **expand** | ListenBrainz release groups and similar artists for each seed |
 | **similar** | The release groups of the top 12 similar artists |
-| **compose** | `pick.ts`, then the AI ranks and explains (`ai.ts`, JSON mode, validated; heuristic fallback) |
+| **compose** | `pick.ts`, then the AI ranks and explains (`ai.ts`: llama-3.3-70b, backup llama-4-scout, JSON mode, validated; heuristic fallback). The free neuron allocation is shared across the account. |
 | **verify** | MusicBrainz lookup of every pick, at most 20 per step, ≤ 1 request/s; cached in `verified` with secondary types |
 | **store** | Replaces the member's open suggestions |
 
