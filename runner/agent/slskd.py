@@ -23,36 +23,31 @@ class Slskd:
             await asyncio.sleep(1)
         return False
 
-    async def search(self, text: str, timeout_ms: int = 8000, response_limit: int = 500, file_limit: int = 25000,
-                     snapshot_every_s: float = 4):
-        """Run a search and yield (responses, state, done) snapshots while it runs, then once more at the end.
+    async def search(self, text: str, timeout_ms: int = 8000, cap_s: float = 15, response_limit: int = 500,
+                     file_limit: int = 25000):
+        """Run a search and yield (responses, state, done) once it ends.
 
-        searchTimeout is in MILLISECONDS and counts from the last answer (Soulseek.NET), not from the start.
-        slskd's API description says seconds, but SearchRequest.ToSearchOptions passes it unchanged to
-        Soulseek.NET's SearchOptions (default 15000 ms); sending 12 ended every search at once (2026-10-12).
-        GET /searches/{id}/responses stays empty until the search ends, so snapshots read
-        GET /searches/{id}?includeResponses=true instead; empty snapshots are skipped.
+        - searchTimeout is in MILLISECONDS and counts from the last answer (Soulseek.NET). slskd's API description
+          says seconds, but SearchRequest.ToSearchOptions passes it unchanged; sending 12 ended searches at once.
+        - Stragglers keep resetting that window, so after `cap_s` the search is stopped (PUT /searches/{id},
+          slskd's Cancel), which keeps every response already received.
+        - slskd exposes responses only after a search ends (/responses and ?includeResponses=true are both
+          empty while it runs, live 2026-10-12), so there are no partial snapshots.
         """
         sid = str(uuid.uuid4())
         body = {"id": sid, "searchText": text, "searchTimeout": timeout_ms, "responseLimit": response_limit,
                 "fileLimit": file_limit, "filterResponses": True}
         (await self.c.post("/searches", json=body)).raise_for_status()
-        state, last_snap, seen = "", time.monotonic(), 0
-        deadline = time.monotonic() + 90
+        state, started, stopped = "", time.monotonic(), False
         try:
-            while time.monotonic() < deadline:
+            while time.monotonic() - started < cap_s + 20:
                 s = (await self.c.get(f"/searches/{sid}")).json()
                 state = s.get("state") or ""
                 if s.get("endedAt"):
                     break
-                count = s.get("responseCount") or 0
-                if time.monotonic() - last_snap >= snapshot_every_s and count > seen:
-                    last_snap = time.monotonic()
-                    full = (await self.c.get(f"/searches/{sid}", params={"includeResponses": "true"})).json()
-                    responses = full.get("responses") or []
-                    if responses:
-                        seen = count
-                        yield responses, state, False
+                if not stopped and time.monotonic() - started >= cap_s:
+                    await self.c.put(f"/searches/{sid}")
+                    stopped = True
                 await asyncio.sleep(1)
             yield (await self.c.get(f"/searches/{sid}/responses")).json(), state, True
         finally:
