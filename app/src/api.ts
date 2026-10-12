@@ -46,6 +46,23 @@ export interface Help {
   guide: { title: string; body: string[] }[];
   commands: { command: string; usage?: string; help: string; aliases?: string[] }[];
 }
+export type FeedName = "weekly" | "like" | "same" | "deep" | "hole";
+export interface Suggestion {
+  id: string;
+  feed: FeedName;
+  mbid: string;
+  artist: string;
+  title: string;
+  year: number | null;
+  kind: string | null;
+  cover: string | null;
+  reason: string;
+}
+export interface BeyondView {
+  status: { phase: string; builtAt: number | null; weeklyAt: number | null; by: "ai" | "plain" | null; empty: boolean };
+  feeds: Record<FeedName, Suggestion[]>;
+  artists: string[];
+}
 export interface SessionInfo {
   state: SessionState;
   since: number;
@@ -111,6 +128,11 @@ export const api = {
   direct: (gid: string) => call<DirectFile[]>("GET", `/api/direct/${gid}`),
   release: (job: string) => call<{ ok: boolean }>("POST", "/api/direct/release", { job }),
   ticket: () => call<{ t: string }>("POST", "/api/ticket"),
+  beyond: () => call<BeyondView>("GET", "/api/beyond"),
+  beyondRefresh: () => call<{ ok: boolean; error?: string }>("POST", "/api/beyond/refresh"),
+  beyondSkip: (id: string) => call<{ ok: boolean }>("POST", "/api/beyond/skip", { id }),
+  beyondSeek: (id: string) => call<{ ok: boolean; sid?: string; query?: string; error?: string }>("POST", "/api/beyond/seek", { id }),
+  beyondHole: (artist: string) => call<{ ok: boolean; items: Suggestion[] }>("POST", "/api/beyond/hole", { artist }),
 };
 
 export type HubEvent =

@@ -8,7 +8,7 @@
 | 3 | MVP loop: search → download → deliver, idle shutdown, history | ✅ done (2026-10-12) |
 | 4 | Mini app UI (Seek, Crossings, status bar) + direct crossing (D8) | ✅ done (2026-10-12) |
 | 4.5 | Review: help, docs, UI/UX, search volume and paging | ✅ done (2026-10-12) |
-| 5 | Beyond (Explore feeds, weekly mix, feedback) | |
+| 5 | Beyond (Explore feeds, weekly mix, feedback) | ✅ built (2026-10-12), live AI check pending |
 | 6 | Wishlist, invites, AI query rewrite and filename cleanup | |
 
 ## Phase 1: runner spike
@@ -89,3 +89,11 @@
   - Crossings in "Now" and "Crossed" sections with relative times, and tap to seek again.
   - A session sheet with Wake and Sleep for the keeper. Toasts moved clear of sheets.
 - **Docs:** README, ARCHITECTURE, DESIGN, RUNBOOK and PROTOCOL rewritten to match the system as built.
+
+## Phase 5: results (2026-10-12)
+- **Feeds:** More like this, From the same hand, Deep cuts, This week's veil, Rabbit hole. `/beyond` in the bot; a Beyond tab in the app with covers, reasons, ✕ skip and tap to seek.
+- **Local end-to-end** against the real ListenBrainz and MusicBrainz APIs (`test/beyond-smoke.mjs`):
+  - Three crossings (NIN, Madvillain, Boards of Canada) gave 31 verified suggestions in about 2 minutes.
+  - Crossed albums were excluded, and live and compilation releases were filtered out.
+  - Skip, seek and crossing-from-suggestion all worked, and the rabbit hole walked OK Computer → Nevermind → Stadium Arcadium.
+- **Deploy:** the AI binding deployed. AI ranking runs in production; locally it falls back to the plain order.

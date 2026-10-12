@@ -2,9 +2,10 @@
 // Anything unauthenticated gets a 404, so the Worker looks like nothing is there.
 
 import { Hono } from "hono";
-import { handleUpdate, type TgUpdate } from "./bot.ts";
+import { handleUpdate, seekSuggestion, type TgUpdate } from "./bot.ts";
 import { safeEqual } from "./crypto.ts";
-import { hub, type Env } from "./env.ts";
+import { norm } from "./beyond/pick.ts";
+import { hub, seer, type Env } from "./env.ts";
 import { validateInitData } from "./initdata.ts";
 import { COMMANDS, GUIDE } from "./help.ts";
 import { activeMember, memberKey, type Member } from "./members.ts";
@@ -13,6 +14,7 @@ import type { View } from "./rank.ts";
 import { tgCall } from "./telegram.ts";
 
 export { Hub } from "./hub.ts";
+export { Seer } from "./seer.ts";
 
 const INIT_DATA_MAX_AGE_S = 24 * 3600;
 
@@ -133,6 +135,67 @@ app.get("/api/help", (c) => {
 });
 
 app.get("/api/session", async (c) => c.json(await hub(c.env).appSession()));
+
+// ---- Beyond (Phase 5)
+
+const FEEDS = ["weekly", "like", "same", "deep", "hole"] as const;
+
+app.get("/api/beyond", async (c) => {
+  const m = c.get("member");
+  const status = await seer(c.env, m.member_key).status();
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, feed, mbid, artist, artist_mbid, title, year, kind, cover, reason FROM suggestions
+     WHERE user_id = ? AND outcome IS NULL ORDER BY feed, rank LIMIT 120`,
+  ).bind(m.member_key).all<Record<string, unknown> & { feed: string }>();
+  const feeds = Object.fromEntries(FEEDS.map((f) => [f, results.filter((r) => r.feed === f)]));
+  const { results: artists } = await c.env.DB.prepare(
+    `SELECT t.artist AS name, MAX(j.updated_at) AS last, COUNT(*) AS n FROM jobs j JOIN tracks t ON t.id = j.track_id
+     WHERE j.user_id = ? AND j.state = 'delivered' AND t.artist IS NOT NULL AND t.artist != ''
+     GROUP BY lower(t.artist) ORDER BY last DESC LIMIT 10`,
+  ).bind(m.member_key).all<{ name: string }>();
+  // First visit with history but nothing gathered yet: start now.
+  if (!status.builtAt && status.phase === "idle" && artists.length) await seer(c.env, m.member_key).kick(m.member_key, 0);
+  return c.json({ status, feeds, artists: artists.map((a) => a.name) });
+});
+
+app.post("/api/beyond/refresh", async (c) => {
+  const m = c.get("member");
+  const s = seer(c.env, m.member_key);
+  const st = await s.status();
+  if (st.builtAt && Date.now() - st.builtAt < 15 * 60_000) return c.json({ ok: false, error: "Gathered moments ago. Try again in a while." });
+  await s.kick(m.member_key, 0);
+  return c.json({ ok: true });
+});
+
+app.post("/api/beyond/skip", async (c) => {
+  const m = c.get("member");
+  const { id } = await c.req.json<{ id?: string }>();
+  if (typeof id !== "string") return c.json({ ok: false }, 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE suggestions SET outcome = 'skipped' WHERE id = ? AND user_id = ?").bind(id, m.member_key),
+    c.env.DB.prepare("INSERT INTO events (user_id, type, ref, feed, created_at) VALUES (?, 'skip', ?, 'beyond', ?)").bind(m.member_key, id, Date.now()),
+  ]);
+  return c.json({ ok: true });
+});
+
+app.post("/api/beyond/seek", async (c) => {
+  const { id } = await c.req.json<{ id?: string }>();
+  if (typeof id !== "string") return c.json({ ok: false }, 400);
+  const r = await seekSuggestion(c.env, c.get("member"), c.get("userId"), id, "app");
+  return r ? c.json({ ok: true, sid: r.sid, state: r.state, query: r.query }) : c.json({ ok: false, error: "That suggestion has faded." });
+});
+
+app.post("/api/beyond/hole", async (c) => {
+  const m = c.get("member");
+  const { artist } = await c.req.json<{ artist?: string }>();
+  if (typeof artist !== "string" || !artist.trim()) return c.json({ ok: false }, 400);
+  const known = await c.env.DB.prepare("SELECT mbid, name FROM artists WHERE name_norm = ?").bind(norm(artist)).first<{ mbid: string | null; name: string }>();
+  const n = await seer(c.env, m.member_key).hole(m.member_key, { mbid: known?.mbid ?? undefined, name: artist.slice(0, 120) });
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, feed, mbid, artist, artist_mbid, title, year, kind, cover, reason FROM suggestions WHERE user_id = ? AND feed = 'hole' AND outcome IS NULL ORDER BY rank",
+  ).bind(m.member_key).all();
+  return c.json({ ok: n > 0, items: results });
+});
 
 /** Client errors from the mini app (message and a short stack, digits masked), for diagnosis. */
 app.post("/api/client-error", async (c) => {

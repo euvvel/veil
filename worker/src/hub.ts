@@ -13,7 +13,7 @@ import { DurableObject } from "cloudflare:workers";
 import { hmacHex, randomHex } from "./crypto.ts";
 import { crossingText, isTerminal, type JobProgress } from "./crossing.ts";
 import { dispatchRunner } from "./doorbell.ts";
-import type { Env } from "./env.ts";
+import { seer, type Env } from "./env.ts";
 import type { Member } from "./members.ts";
 import { frame, type Envelope, type Fmt, type Folder, type JobMode, type JobStateMsg, type TrackMeta } from "./protocol.ts";
 import { basename, counts, describe, dirname, peerScore, rank, render, type Counts, type Item, type Prefs, type View } from "./rank.ts";
@@ -252,13 +252,14 @@ export class Hub extends DurableObject<Env> {
 
   // ---------------------------------------------------------------- searches
 
-  async search(member: Member, chatId: number, query: string, fmt: Fmt, origin: Origin = "bot"): Promise<{ sid: string; state: S.SessionState }> {
+  async search(member: Member, chatId: number, query: string, fmt: Fmt, origin: Origin = "bot", suggestionId?: string): Promise<{ sid: string; state: S.SessionState }> {
     const now = Date.now();
     const sid = randomHex(5);
     const prefs = JSON.parse(member.prefs) as Prefs;
     const rec: SearchRec = { sid, query, fmt, view: "t", chatId, member: member.member_key, prefs, origin, status: "pending", createdAt: now };
     await this.env.DB.batch([
-      this.env.DB.prepare("INSERT INTO searches (id, user_id, query, format_filter, created_at) VALUES (?, ?, ?, ?, ?)").bind(sid, member.member_key, query, fmt, now),
+      this.env.DB.prepare("INSERT INTO searches (id, user_id, query, format_filter, created_at, suggestion_id) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(sid, member.member_key, query, fmt, now, suggestionId ?? null),
       this.env.DB.prepare("INSERT INTO events (user_id, type, ref, created_at) VALUES (?, 'search', ?, ?)").bind(member.member_key, sid, now),
     ]);
     const s = await this.load();
@@ -601,7 +602,9 @@ export class Hub extends DurableObject<Env> {
 
   /** Terminal state: record the text metadata, update peer stats, erase peer/path/chat id. */
   private async finishJob(m: JobStateMsg, now: number): Promise<void> {
-    const job = await this.env.DB.prepare("SELECT user_id, peer, state FROM jobs WHERE id = ?").bind(m.job_id).first<{ user_id: string; peer: string | null; state: string }>();
+    const job = await this.env.DB.prepare(
+      "SELECT j.user_id, j.peer, j.state, s.suggestion_id FROM jobs j LEFT JOIN searches s ON s.id = j.search_id WHERE j.id = ?",
+    ).bind(m.job_id).first<{ user_id: string; peer: string | null; state: string; suggestion_id: string | null }>();
     if (!job || job.state === "delivered" || job.state === "failed") return;
     const db = this.env.DB;
     const stmts: D1PreparedStatement[] = [];
@@ -615,6 +618,13 @@ export class Hub extends DurableObject<Env> {
           .bind(trackId, t.artist ?? null, t.title ?? null, t.album ?? null, t.year ?? null, t.format ?? null, t.mb_recording ?? null, t.mb_release ?? null),
         db.prepare("INSERT INTO events (user_id, type, ref, created_at) VALUES (?, 'deliver', ?, ?)").bind(job.user_id, trackId, now),
       );
+      if (job.suggestion_id) {
+        // A crossing that began at a suggestion counts in its favour.
+        stmts.push(
+          db.prepare("UPDATE suggestions SET outcome = 'crossed' WHERE id = ? AND user_id = ?").bind(job.suggestion_id, job.user_id),
+          db.prepare("INSERT INTO events (user_id, type, ref, feed, created_at) VALUES (?, 'download', ?, 'beyond', ?)").bind(job.user_id, job.suggestion_id, now),
+        );
+      }
     }
     stmts.push(
       db.prepare("UPDATE jobs SET state = ?, error = ?, track_id = ?, chat_id = NULL, peer = NULL, path = NULL, updated_at = ? WHERE id = ?")
@@ -622,6 +632,8 @@ export class Hub extends DurableObject<Env> {
     );
     if (job.peer && !["too_large", "upload", "gave_up", "unclaimed"].includes(m.error ?? "")) stmts.push(await this.peerStatStmt(job.peer, m, now));
     await db.batch(stmts);
+    // Something crossed: Beyond is gathered again a little later (debounced in the Seer).
+    if (m.state === "delivered") await seer(this.env, job.user_id).kick(job.user_id, 10 * 60_000).catch(() => {});
   }
 
   // ---------------------------------------------------------------- WebSockets

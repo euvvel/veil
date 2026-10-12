@@ -16,9 +16,17 @@
   ],
 
   "durable_objects": {
-    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+    "bindings": [
+      { "name": "HUB", "class_name": "Hub" },
+      { "name": "SEER", "class_name": "Seer" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Hub"] },
+    { "tag": "v2", "new_sqlite_classes": ["Seer"] }
+  ],
+
+  "ai": { "binding": "AI" },
 
   "vars": {
     "BOT_USERNAME": "euveilbot",

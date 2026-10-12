@@ -46,7 +46,7 @@ function Row({ it, selected, open, onTap }: { it: Item; selected: boolean; open:
   );
 }
 
-export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: number } | null }) {
+export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: number; sid?: string } | null }) {
   const [query, setQuery] = useState("");
   const [fmt, setFmt] = useState<Fmt>(prefs.format);
   const [view, setView] = useState<View>("t");
@@ -130,9 +130,19 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
     }
   };
 
-  // A request from elsewhere (a past crossing tapped in Crossings) seeks it again.
+  // A request from elsewhere: a past crossing (seek it again) or a suggestion (its search already started).
   useEffect(() => {
-    if (ask) seek(ask.query);
+    if (!ask) return;
+    if (!ask.sid) return void seek(ask.query);
+    setQuery(ask.query);
+    last.current = `${ask.query.toLowerCase()}|${fmt}`;
+    setSel(null);
+    setRes(null);
+    setItems([]);
+    setHeard(null);
+    setSince(Date.now());
+    setSid(ask.sid);
+    setView("t");
   }, [ask?.n]);
 
   const switchTo = async (v: View, f: Fmt) => {

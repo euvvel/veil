@@ -3,7 +3,7 @@
 // Bot API call and logs the outcome (REPLY_MODE=webhook keeps it on the webhook response for local tests).
 
 import type { Env } from "./env.ts";
-import { hub } from "./env.ts";
+import { hub, seer } from "./env.ts";
 import { helpText, MENU_VERSION, menuFor } from "./help.ts";
 import * as M from "./members.ts";
 import type { Fmt } from "./protocol.ts";
@@ -99,6 +99,38 @@ async function seek(env: Env, member: M.Member, chatId: number, arg: string): Pr
   );
 }
 
+async function beyond(env: Env, member: M.Member, chatId: number): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, feed, artist, title, year, reason FROM suggestions
+     WHERE user_id = ? AND outcome IS NULL AND feed IN ('weekly', 'like') ORDER BY feed = 'weekly' DESC, rank LIMIT 6`,
+  ).bind(member.member_key).all<{ id: string; feed: string; artist: string; title: string; year: number | null; reason: string }>();
+  if (!results.length) {
+    await seer(env, member.member_key).kick(member.member_key, 0);
+    return say(chatId, "Beyond is still veiled. Let a few things cross; I am gathering what lies near them.", openVeil(env));
+  }
+  const lines = results.map((r, i) => `${i + 1}. ${r.artist} — ${r.title}${r.year ? ` (${r.year})` : ""}\n    ${r.reason}`);
+  const buttons = results.map((r, i) => ({ text: `${i + 1}`, callback_data: `b:${r.id}` }));
+  return say(chatId, `What lies beyond\n\n${lines.join("\n")}\n\nTap a number to seek it.`, {
+    reply_markup: { inline_keyboard: [buttons.slice(0, 3), buttons.slice(3, 6)].filter((r) => r.length) },
+  });
+}
+
+/** Seek a suggestion: exact artist and title, remembered as a tap. */
+export async function seekSuggestion(env: Env, member: M.Member, chatId: number, id: string, origin: "bot" | "app") {
+  const s = await env.DB.prepare("SELECT id, artist, title FROM suggestions WHERE id = ? AND user_id = ?").bind(id, member.member_key)
+    .first<{ id: string; artist: string; title: string }>();
+  if (!s) return null;
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE suggestions SET outcome = 'tapped' WHERE id = ? AND outcome IS NULL").bind(id),
+    env.DB.prepare("INSERT INTO events (user_id, type, ref, feed, created_at) VALUES (?, 'tap', ?, 'beyond', ?)").bind(member.member_key, id, now),
+  ]);
+  const fmt = (JSON.parse(member.prefs) as { format?: Fmt }).format ?? "flac";
+  const query = `${s.artist} ${s.title}`.replace(/\(.*?\)|\[.*?\]/g, " ").replace(/\s+/g, " ").trim();
+  const r = await hub(env).search(member, chatId, query, fmt, origin, id);
+  return { ...r, query };
+}
+
 async function history(env: Env, member: M.Member, chatId: number): Promise<Response> {
   const { results } = await env.DB.prepare(
     `SELECT j.name, j.format, t.artist, t.title FROM jobs j LEFT JOIN tracks t ON t.id = j.track_id
@@ -126,6 +158,12 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
       if (!act.reply) return silence();
       const { method, ...body } = JSON.parse(act.reply) as { method: string };
       return reply(method, body);
+    }
+    if (cq.data?.startsWith("b:") && cq.message) {
+      const r = await seekSuggestion(env, me, cq.message.chat.id, cq.data.slice(2), "bot");
+      if (!r) return reply("answerCallbackQuery", { callback_query_id: cq.id, text: "That suggestion has faded." });
+      waitUntil(tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Seeking it." }));
+      return say(cq.message.chat.id, r.state === "ready" ? `Listening beyond · “${r.query}”` : `${label("booting")}\nI'll seek “${r.query}” as soon as the veil opens.`);
     }
     if (me.role !== "admin" || !cq.data?.startsWith("rv:")) return silence();
     const ok = await M.revoke(env.DB, cq.data.slice(3));
@@ -178,6 +216,9 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
 
     case "/history":
       return history(env, member, chatId);
+
+    case "/beyond":
+      return beyond(env, member, chatId);
 
     case "/status": {
       const s = await hub(env).getSession();

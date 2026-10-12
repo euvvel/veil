@@ -77,3 +77,19 @@ Short records of decisions that shape the project. Newest at the bottom.
 ### D10 · One source for help (2026-10-12)
 - **Decision:** `worker/src/help.ts` defines every command and the guide text. It feeds the bot's `/help`, the per-chat menus (self-refreshing through `MENU_VERSION`) and the mini app's Guide.
 - **Consequence:** `test/help.test.ts` keeps [GUIDE.md](GUIDE.md) in step. Plain words in the chat search, and an unknown command points to `/help`.
+
+### D11 · Beyond: verified suggestions, AI only ranks (2026-10-12)
+- **Decision:** suggestions come from what crossed to the member:
+  - **Seeds:** artists weighted by how much and how recently they crossed, minus skips.
+  - **Sources:** ListenBrainz similar artists (labs API) and each artist's release groups with listen counts (popularity API).
+  - **Feeds:** More like this, From the same hand, Deep cuts (1–15% of an artist's best-known listens), This week's veil, and an on-demand Rabbit hole.
+- **Verification:** every shown suggestion is a release group confirmed by a MusicBrainz lookup (≤ 1 request/s). The lookup's secondary types drop live sets, compilations, DJ-mixes and the like.
+- **AI:** Workers AI (`@cf/meta/llama-3.1-8b-instruct`, JSON mode) receives numbered candidates with plain facts. It returns indices and one-line reasons, and is validated against the list. Without it, a heuristic order with template reasons is used. The Rabbit hole uses template reasons.
+- **Scheduling:** one Seer Durable Object per member, driven by alarms rather than cron triggers (the account's other Workers share the free plan's 5 cron triggers).
+  - A rebuild runs about 10 minutes after something crosses, plus weekly (Monday 06:00 UTC).
+  - Each step stays well inside the per-invocation limits.
+- **Storage:** feeds are stored in D1 (`suggestions`), not KV, so opening Beyond never waits.
+- **Feedback:**
+  - Taps and crossings are remembered and never suggested again.
+  - ✕ skips for good and lowers that artist's weight.
+- **Covers:** loaded by the member's device from Cover Art Archive (archive.org), never stored.

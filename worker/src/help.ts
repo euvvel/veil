@@ -23,6 +23,12 @@ export const COMMANDS: Command[] = [
     roles: ["admin", "member"],
   },
   {
+    command: "beyond",
+    menu: "What lies beyond: suggestions",
+    help: "This week's suggestions, drawn from what crossed to you and checked against MusicBrainz. Tap a number to seek it.",
+    roles: ["admin", "member"],
+  },
+  {
     command: "history",
     menu: "Your last crossings",
     help: "Lists the last ten tracks that crossed to you, as text: artist, title, format.",
@@ -92,6 +98,13 @@ export const GUIDE: HelpSection[] = [
       "Choose a result and let it cross. The file comes to you from @{courier}, untouched, and is deleted from the runner the moment it arrives.",
       "If a person refuses or goes quiet, veil tries the same file from someone else, up to three times.",
       "Files over 50 MB are too large for a bot to send. They wait at the veil's edge for 30 minutes: open veil and save them to your device.",
+    ],
+  },
+  {
+    title: "Beyond",
+    body: [
+      "Suggestions drawn from what crossed to you: more like it, more from the same hand, quieter records near your taste, a weekly mix, and a rabbit hole that walks outward from any artist.",
+      "Every suggestion is a real release confirmed against MusicBrainz; the AI only orders them and writes the one-line reasons. Tapping one seeks it; ✕ skips it for good and teaches the veil.",
     ],
   },
   {

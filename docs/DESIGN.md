@@ -91,7 +91,12 @@ Everything respects `prefers-reduced-motion`: motion is replaced by simple opaci
 2. **Crossings**
    - **Now:** live crossings with the parting animation. A file at the veil's edge shows *Receive it*.
    - **Crossed:** text history (artist – title, album · format · *2 h ago*). Tap a line to seek it again.
-3. **Beyond:** placeholder until Phase 5. One row per feed; each card shows artist, title, year and a one-line reason in the display serif.
+3. **Beyond**
+   - **Feeds:** one row per feed, scrolling sideways with snap: This week's veil, More like this, From the same hand, Deep cuts.
+   - **Card:** cover (Cover Art Archive, slightly desaturated; an initial on a mist gradient when missing), title, artist, year · kind, and the one-line reason in the display serif (italic). A ✕ in the corner skips.
+   - **Tap a card:** it seeks that exact release and switches to Seek with the search already running.
+   - **Rabbit hole:** chips of your recent artists; the trail appears as a vertical list of cards.
+   - **Status line:** *Gathered 2 h ago · ordered by the veil*, with *Gather again*.
 4. **Sheets** (slide up from the bottom, with a grip and Esc to close):
    - **The veil** (tap the status strip): state, since when, what happens to large files this session. The keeper also gets *Wake now* or *Let it sleep now*.
    - **Settings** (⚙︎): default format, largest file, MP3 320 fallback, then **Guide** and **About veil**.

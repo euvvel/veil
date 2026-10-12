@@ -1,6 +1,7 @@
 import { render, type ComponentChildren } from "preact";
 import { useEffect, useErrorBoundary, useState } from "preact/hooks";
 import { ago, api, live, type Help, type HubEvent, type Me, type Prefs, type SessionInfo, type SessionState } from "./api.ts";
+import { Beyond } from "./beyond.tsx";
 import { Crossings } from "./crossings.tsx";
 import { Receive } from "./receive.tsx";
 import { Seek } from "./seek.tsx";
@@ -192,7 +193,7 @@ function App() {
   const [state, setState] = useState<SessionState>("offline");
   const [tab, setTab] = useState<Tab>("seek");
   const [sheet, setSheet] = useState<Sheet>(null);
-  const [ask, setAsk] = useState<{ query: string; n: number } | null>(null);
+  const [ask, setAsk] = useState<{ query: string; n: number; sid?: string } | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const receiveGid = location.hash.match(/^#receive\/([0-9a-f]+)$/)?.[1];
 
@@ -246,12 +247,9 @@ function App() {
           <div hidden={tab !== "crossings"}>
             <Crossings visible={tab === "crossings"} onSeek={(q) => { setTab("seek"); setAsk({ query: q, n: Date.now() }); }} />
           </div>
-          {tab === "beyond" && (
-            <div class="beyond">
-              <p>What lies beyond is still veiled.</p>
-              <small>Suggestions drawn from what crossed to you arrive in a later phase.</small>
-            </div>
-          )}
+          <div hidden={tab !== "beyond"}>
+            <Beyond visible={tab === "beyond"} onSought={(sid, query) => { setTab("seek"); setAsk({ query, sid, n: Date.now() }); }} />
+          </div>
         </>
       )}
       {sheet === "session" && <SessionSheet me={me} state={state} onClose={close} />}

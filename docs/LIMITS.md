@@ -110,3 +110,15 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Door through the tunnel | 5 MB file byte-identical, `audio/flac`, CORS for web.telegram.org, `Content-Disposition: attachment`; unknown paths 404 | ✅ live 2026-10-12 | |
 | Web Share (`navigator.share`) with files, Chromium | ≤ 10 files, **≤ 50 MB total**; larger is rejected with `NotAllowedError` (no share sheet) | ✅ source + live (Chrome 155, Android 14) | chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/modules/webshare/navigator_share.cc |
 | Telegram Android mini app web view | `navigator.canShare({files})` is false | ✅ live 2026-10-12 | owner's phone |
+
+## Beyond sources (Phase 5)
+
+| Item | Value | Status | Source (checked 2026-10-12) |
+|---|---|---|---|
+| ListenBrainz similar artists | `GET labs.api.listenbrainz.org/similar-artists/json?artist_mbids=…&algorithm=session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30` → `[{artist_mbid, name, score, …}]` (100). "Labs": may change. | ✅ live probe | labs.api.listenbrainz.org/similar-artists |
+| ListenBrainz release groups by popularity | `GET api.listenbrainz.org/1/popularity/top-release-groups-for-artist/{mbid}` → `[{release_group_mbid, total_listen_count, release_group{name,date,type,caa_release_mbid}, …}]`, no auth | ✅ live probe | listenbrainz.readthedocs.io (popularity) |
+| MusicBrainz | ≤ 1 request/s per IP (503 above), contact User-Agent required; `GET /ws/2/release-group/{mbid}?fmt=json` returns `secondary-types` | ✅ docs + live | musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting |
+| Workers AI JSON mode | `response_format: {type: "json_schema", json_schema}`; supported by llama-3.1-8b-instruct, llama-3.3-70b-fp8-fast and a few others | ✅ docs | developers.cloudflare.com/workers-ai/features/json-mode |
+| Workers AI cost | llama-3.1-8b-instruct: 25,608 neurons / M input, 75,147 / M output → about 110 neurons per ranking call (free: 10,000 / day) | ✅ docs | developers.cloudflare.com/workers-ai/platform/pricing |
+| AI binding on deploy | worked with the existing token (no extra permission) | ✅ live | |
+| A full gather (3 seeds, real APIs) | about 130–160 s in the background, 31–39 suggestions | ✅ local run | `test/beyond-smoke.mjs` |

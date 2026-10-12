@@ -61,6 +61,7 @@ The console output is in each event's `source` field.
    node --experimental-strip-types test/phase3-smoke.mjs http://127.0.0.1:8787   # search, paging, crossings
    node --experimental-strip-types test/phase4-smoke.mjs http://127.0.0.1:8787   # app API, direct crossing, fallback
    npm run test:ui -- http://127.0.0.1:8787 [shots-dir]                          # built app in Chrome, inside Telegram's real SDK
+   node --experimental-strip-types test/beyond-smoke.mjs http://127.0.0.1:8787   # Beyond against the real ListenBrainz/MusicBrainz (~3 min)
    ```
    The UI test loads `telegram.org/js/telegram-web-app.js` for real, because a permissive stand-in hid an SDK exception that froze the app (the main button refuses empty text). Build the app first; `CHROME_PATH` defaults to `/usr/bin/google-chrome`.
    Each suite needs a fresh D1 (it claims the keeper).

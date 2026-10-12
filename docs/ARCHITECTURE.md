@@ -52,6 +52,7 @@ The runner makes **outbound** connections only: its WebSocket to the Hub, Telegr
 | `GET /api/recent` | Recent searches |
 | `GET /api/help` | The shared help text (`help.ts`) |
 | `GET /api/session` | Session state and details |
+| `GET /api/beyond`, `POST /api/beyond/{refresh,skip,seek,hole}` | Beyond feeds, skip, seek a suggestion (linked to its search), rabbit hole |
 | `POST /api/session/{wake,sleep}` | Wake or sleep the runner (keeper only) |
 | `POST /api/ticket` | Single-use 60 s ticket for the live socket |
 
@@ -126,6 +127,26 @@ Dispatch to Soulseek login takes about 20 s.
   - Finish uploads, hand back unfinished jobs, settle direct files, log out of Soulseek (`DELETE /server`), close the door, say goodbye.
 - **Logs** are public, so they hold counts and states only. No queries, names, peers or ids.
 
+### Seer (`worker/src/seer.ts`, `worker/src/beyond/`)
+
+One Durable Object per member gathers Beyond in alarm-driven steps (D11):
+
+| Step | Does |
+|---|---|
+| **seeds** | Weighted artists from `tracks`/`jobs`. Names are resolved to MusicBrainz ids once and cached in `artists`. |
+| **expand** | ListenBrainz release groups and similar artists for each seed |
+| **similar** | The release groups of the top 12 similar artists |
+| **compose** | `pick.ts`, then the AI ranks and explains (`ai.ts`, JSON mode, validated; heuristic fallback) |
+| **verify** | MusicBrainz lookup of every pick, at most 20 per step, ≤ 1 request/s; cached in `verified` with secondary types |
+| **store** | Replaces the member's open suggestions |
+
+- **Triggers:**
+  - About 10 minutes after a delivery (debounced).
+  - The first visit to Beyond.
+  - *Gather again* in the app (at most every 15 minutes).
+  - Weekly, Monday 06:00 UTC.
+- **Rabbit hole** runs on demand: up to 4 steps through similar artists, one verified record per step.
+
 ## Data (D1, text only)
 
 | Table | Holds |
@@ -137,6 +158,9 @@ Dispatch to Soulseek login takes about 20 s.
 | `tracks` | Artist, title, album, year, format, MusicBrainz ids (from tags) |
 | `events` | search, download, deliver (feeds Phase 5) |
 | `peer_stats` | `peer_hash` (HMAC), ok/fail/refused, average speed |
+| `suggestions` | Beyond feeds: release-group MBID, artist, title, year, kind, cover release MBID, reason, rank, outcome (tapped, skipped, crossed) |
+| `artists` | Artist name → MusicBrainz id (shared cache) |
+| `verified` | Release groups confirmed by MusicBrainz, with secondary types |
 
 ## Help, in one place
 

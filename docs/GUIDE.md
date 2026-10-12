@@ -51,6 +51,24 @@ A bot can't send files over 50 MB into a chat. Such files wait **at the veil's e
 2. Tap **Receive it** → **Save to device**.
 3. To keep it in a chat: open the chat → 📎 → **File**, and pick it from your recent files.
 
+## Beyond
+
+Suggestions drawn from what crossed to you, in the mini app's **Beyond** tab:
+
+| Feed | What it holds |
+|---|---|
+| This week's veil | A weekly mix across the feeds below, refreshed every Monday |
+| More like this | The best-known record of artists similar to the ones you keep |
+| From the same hand | Albums and EPs by artists you have, that you haven't taken yet |
+| Deep cuts | Quieter records (a fraction of an artist's best-known listens) near your taste |
+| Rabbit hole | Pick one of your artists; veil walks outward through similar artists, one record per step |
+
+- **Real releases only:** every suggestion is a release confirmed against MusicBrainz. The AI only orders them and writes the one-line reasons, from facts it's given.
+- **Fresh:** feeds are gathered again about ten minutes after something crosses, so opening Beyond never waits.
+- **Tap a card** to seek that exact release. A crossing that starts there counts in its favour.
+- **✕** skips it for good, and that artist weighs a little less afterwards.
+- In the bot, `/beyond` lists the week's suggestions with buttons that seek them.
+
 ## The runner
 
 veil wakes a short-lived runner when you seek. It's usually open in under half a minute. After 20 quiet minutes it falls asleep, logging out of Soulseek. Nothing is kept: no audio, only a line of text that something crossed.
@@ -60,6 +78,7 @@ veil wakes a short-lived runner when you seek. It's usually open in under half a
 | Command | Who | What it does |
 |---|---|---|
 | `/seek [flac\|mp3\|any] words` (or `/s`) | everyone | Searches. Without words, it repeats your last search. Plain words without a command do the same. |
+| `/beyond` | everyone | This week's suggestions, with numbered buttons that seek them. |
 | `/history` | everyone | Your last ten crossings, as text. |
 | `/status` | everyone | Whether the veil is closed, starting, open or falling. |
 | `/help` | everyone | This guide, in short. |

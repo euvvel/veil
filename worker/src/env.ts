@@ -1,8 +1,11 @@
 import type { Hub } from "./hub.ts";
+import type { Seer } from "./seer.ts";
 
 export interface Env {
   DB: D1Database;
   HUB: DurableObjectNamespace<Hub>;
+  SEER: DurableObjectNamespace<Seer>;
+  AI?: Ai;
   ASSETS: Fetcher;
 
   BOT_USERNAME: string;
@@ -26,3 +29,6 @@ export interface Env {
 }
 
 export const hub = (env: Env) => env.HUB.get(env.HUB.idFromName("hub"));
+
+/** One Seer per member (Beyond feeds). */
+export const seer = (env: Env, memberKey: string) => env.SEER.get(env.SEER.idFromName(memberKey));
