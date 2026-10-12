@@ -2,7 +2,12 @@ name: check-search
 
 # Diagnostic: the agent's real search against Soulseek, counts only.
 # Public repo: every step prints counts only. Container logs are never echoed.
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: check script (search or timeline)
+        default: search
 
 concurrency:
   group: veil-runner
@@ -62,7 +67,9 @@ jobs:
         working-directory: runner
         env:
           SPIKE_QUERIES: ${{ secrets.SPIKE_QUERIES }}
-        run: python check/search.py
+          SCRIPT: ${{ inputs.script }}
+        run: |
+          case "${SCRIPT:-search}" in search|timeline) python "check/${SCRIPT:-search}.py" ;; *) echo "unknown script"; exit 1 ;; esac
 
       - name: Stop slskd
         if: always()
