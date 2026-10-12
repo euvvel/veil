@@ -89,19 +89,19 @@ export function FileCard({ f, where, onDone }: { f: DirectFile; where: Where; on
       <div class="half r" />
       <div class="name">{f.name}</div>
       <div class="text">{done ? "Crossed" : `${mb(f.size)} · at the veil's edge`}</div>
-      <div class="ember" style={{ "--p": done ? 100 : pct ?? 0 }} />
+      <div class="trace" style={{ "--p": done ? 100 : pct ?? 0 }} />
       {!done && (
         <div class="act stack">
           {share && !file && (
-            <button class="btn ember" onClick={bringClose} disabled={pct !== null}>
+            <button class="btn lead" onClick={bringClose} disabled={pct !== null}>
               {pct === null ? "Bring it close" : `Bringing it close · ${pct}%`}
             </button>
           )}
-          {share && file && <button class="btn ember" onClick={putInChat}>Put it in the chat</button>}
+          {share && file && <button class="btn lead" onClick={putInChat}>Put it in the chat</button>}
           {!share && where === "telegram" && (
             <>
-              <button class="btn ember" onClick={() => tg?.openLink(outLink(f), { try_instant_view: false })}>Open in browser to put it in the chat</button>
               <p class="note">Telegram's window here cannot hand files to other apps. Your browser can.</p>
+              <button class="btn lead" onClick={() => tg?.openLink(outLink(f), { try_instant_view: false })}>Open in browser to put it in the chat</button>
             </>
           )}
           <button class="btn" onClick={save}>Save to device</button>

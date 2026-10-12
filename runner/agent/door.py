@@ -29,6 +29,7 @@ class Door:
         self.allowed = allowed_origins
         self.files: dict[str, Waiting] = {}
         self.server: asyncio.base_events.Server | None = None
+        self.writers: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self._handle, "127.0.0.1", self.port)
@@ -43,7 +44,15 @@ class Door:
         w = self.files.get(token)
         return bool(w and w.active)
 
+    def close(self) -> None:
+        """Stop listening and cut every open connection, so shutdown never waits on a stalled reader."""
+        if self.server:
+            self.server.close()
+        for w in list(self.writers):
+            w.transport.abort()
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.writers.add(writer)
         try:
             head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 15)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
@@ -67,6 +76,7 @@ class Door:
         except (ConnectionError, OSError, asyncio.TimeoutError):
             pass
         finally:
+            self.writers.discard(writer)
             try:
                 writer.transport.abort() if writer.transport.get_write_buffer_size() else writer.close()
                 await writer.wait_closed()

@@ -358,6 +358,8 @@ class Agent:
         log(f"soulseek logout: http {status}")
         self.link.send("runner.bye", reason=reason)
         await self.link.flushed()
+        if self.door:
+            self.door.close()
         self.stop.set()
 
     async def run(self) -> None:

@@ -21,10 +21,10 @@ function Row({ c }: { c: Crossing }) {
       <div class="half r" />
       <div class="name">{c.name}</div>
       <div class="text">{c.text.replace(` · ${c.name}`, "")}</div>
-      <div class="ember" style={{ "--p": c.done ? 0 : p }} />
+      <div class="trace" style={{ "--p": c.done ? 0 : p }} />
       {awaiting && !c.done && (
         <div class="act">
-          <a class="btn ember" href={`#receive/${c.gid}`} onClick={() => setTimeout(() => location.reload(), 0)}>Receive it</a>
+          <a class="btn lead" href={`#receive/${c.gid}`} onClick={() => setTimeout(() => location.reload(), 0)}>Receive it</a>
         </div>
       )}
     </div>

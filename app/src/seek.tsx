@@ -13,6 +13,9 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
   const [res, setRes] = useState<SearchView | null>(null);
   const [sel, setSel] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [since, setSince] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const last = useRef<string>("");
   const input = useRef<HTMLInputElement>(null);
 
   const load = async (s: string, v?: View, f?: Fmt) => {
@@ -36,20 +39,34 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
     };
   }, [sid, res?.status]);
 
+  const listening = Boolean(sid && (!res || res.status === "pending" || res.status === "sent"));
+
+  // A ticking "Listening beyond · 7s", so the wait is visible and nobody seeks twice.
+  useEffect(() => {
+    if (!listening && !busy) return setSince(null);
+    setSince((s) => s ?? Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [listening, busy]);
+
   const seek = async (e?: Event) => {
     e?.preventDefault();
     const q = query.trim();
-    if (!q || busy) return;
+    const key = `${q.toLowerCase()}|${fmt}`;
+    if (!q || busy || (listening && key === last.current)) return;
+    last.current = key;
     input.current?.blur();
     setBusy(true);
     setSel(null);
     setRes(null);
+    setSince(Date.now());
+    haptic.soft();
     try {
       const r = await api.search(q, fmt);
       setSid(r.sid);
       setView("t");
-      haptic.soft();
     } catch {
+      last.current = "";
       toast("The veil did not hear that. Try again.");
     } finally {
       setBusy(false);
@@ -99,14 +116,16 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
     return () => mb.offClick(go);
   }, [sel, res, sid]);
 
-  const waiting = sid && (!res || res.status === "pending" || res.status === "sent");
+  const secs = since ? Math.max(0, Math.round((now - since) / 1000)) : 0;
 
   return (
     <section>
       <form class="seekbar layer" onSubmit={seek}>
         <input ref={input} value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
           placeholder="Seek an artist, a title…" enterKeyHint="search" autoComplete="off" />
-        <button class="btn ember" type="submit" disabled={!query.trim() || busy}>Seek</button>
+        <button class="btn lead" type="submit" disabled={!query.trim() || busy || (listening && `${query.trim().toLowerCase()}|${fmt}` === last.current)}>
+          {busy || listening ? `${secs}s` : "Seek"}
+        </button>
       </form>
 
       <div class="row-controls">
@@ -123,7 +142,7 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
         )}
       </div>
 
-      {waiting && <div class="empty">Listening beyond…</div>}
+      {(busy || listening) && <div class="empty">Listening beyond · {secs}s</div>}
       {res?.status === "gone" && <div class="empty">That search has faded. Seek again.</div>}
       {res?.status === "done" && (
         <>
@@ -144,7 +163,7 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
             </div>
           )}
           {!tg && sel !== null && (
-            <p><button class="btn ember" onClick={() => api.cross(sid!, res.items[sel]!.i).then(onCrossed)}>Let it cross</button></p>
+            <p><button class="btn lead" onClick={() => api.cross(sid!, res.items[sel]!.i).then(onCrossed)}>Let it cross</button></p>
           )}
         </>
       )}
