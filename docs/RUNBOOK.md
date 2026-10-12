@@ -56,7 +56,8 @@ The console output is in each event's `source` field.
 3. **End-to-end tests** against a fresh local Worker:
    ```sh
    cd worker && rm -rf .wrangler/state && npx wrangler d1 migrations apply veil --local
-   npx wrangler dev --port 8787 &          # .dev.vars holds test secrets and REPLY_MODE=webhook
+   npx wrangler dev --port 8787 &          # .dev.vars holds test secrets and REPLY_MODE=webhook;
+                                           # CLOUDFLARE_API_TOKEN/ACCOUNT_ID must be set: the AI binding is remote even in dev
    node --experimental-strip-types test/local-smoke.mjs  http://127.0.0.1:8787   # front door, auth, Hub
    node --experimental-strip-types test/phase3-smoke.mjs http://127.0.0.1:8787   # search, paging, crossings
    node --experimental-strip-types test/phase4-smoke.mjs http://127.0.0.1:8787   # app API, direct crossing, fallback
