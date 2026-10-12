@@ -172,7 +172,10 @@ class Agent:
         self.touch()
         last: dict = {"responses": 0, "files": 0, "folders": []}
         try:
-            async for responses, state, done in self.slskd.search(query):
+            def progress(responses: int, files: int) -> None:
+                self.link.send("search.progress", search_id=search_id, responses=responses, files=files)
+
+            async for responses, state, done in self.slskd.search(query, on_progress=progress):
                 files = sum(len(r.get("files") or []) for r in responses)
                 last = {"responses": len(responses), "files": files, "folders": build_folders(responses)}
                 self.link.send("search.results", search_id=search_id, partial=not done, **last)

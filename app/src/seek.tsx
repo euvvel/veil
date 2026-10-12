@@ -59,6 +59,7 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
   const [recent, setRecent] = useState<string[]>([]);
   const [since, setSince] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [heard, setHeard] = useState<{ responses: number; files: number } | null>(null);
   const last = useRef("");
   const input = useRef<HTMLInputElement>(null);
 
@@ -78,11 +79,14 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
   useEffect(() => {
     if (!sid) return;
     const off = onHub((e) => {
+      if (e.type === "search.progress" && e.data.sid === sid) setHeard({ responses: e.data.responses, files: e.data.files });
       if ((e.type === "search.done" || e.type === "search.update") && e.data.sid === sid) load(sid, view, fmt, items.length).catch(() => {});
     });
+    // Fetch once right away too: results may already be there (the socket can reconnect between frames).
+    if (res?.status !== "done") load(sid, view, fmt, items.length).catch(() => {});
     const poll = setInterval(() => {
       if (res?.status !== "done") load(sid, view, fmt, items.length).catch(() => {});
-    }, 6000);
+    }, 3000);
     return () => {
       off();
       clearInterval(poll);
@@ -110,6 +114,7 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
     setSel(null);
     setRes(null);
     setItems([]);
+    setHeard(null);
     setSince(Date.now());
     haptic.soft();
     try {
@@ -176,7 +181,8 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
   useEffect(() => {
     const b = tg?.MainButton;
     if (!b) return;
-    const text = !selected ? "" : selected.kind === "a" ? `Let ${selected.files.length} files cross` : selected.direct ? "Let it cross (directly)" : "Let it cross";
+    // Telegram's SDK throws on an empty text (WebAppBottomButtonParamInvalid), even for a hidden button.
+    const text = selected?.kind === "a" ? `Let ${selected.files.length} files cross` : selected?.direct ? "Let it cross (directly)" : "Let it cross";
     b.setParams({ text, is_visible: Boolean(selected), is_active: true, color: token("--spirit"), text_color: token("--void") });
     b.onClick(cross);
     return () => b.offClick(cross);
@@ -222,12 +228,18 @@ export function Seek({ prefs, ask }: { prefs: Prefs; ask: { query: string; n: nu
       {sid && (tally || listening) && (
         <p class="summary">
           {tally}
-          {listening && <span class="listening">{tally ? " · still listening" : `Listening beyond · ${secs}s`}</span>}
+          {listening && (
+            <span class="listening">
+              {tally ? " · still listening" : heard ? `Listening beyond · ${heard.responses} answers · ${heard.files} files` : `Listening beyond · ${secs}s`}
+            </span>
+          )}
         </p>
       )}
       {res?.note && <p class="note">{res.note}</p>}
 
-      {sid && listening && items.length === 0 && <div class="empty">Listening beyond…</div>}
+      {sid && listening && items.length === 0 && (
+        <div class="empty">{heard ? `${heard.responses} answers from beyond…` : secs > 4 ? "The veil is opening…" : "Listening beyond…"}</div>
+      )}
       {res?.status === "gone" && <div class="empty">That search has faded. Seek again.</div>}
       {res?.status === "done" && items.length === 0 && <div class="empty">Nothing answered from beyond.</div>}
       {!sid && recent.length === 0 && <div class="empty">What do you seek?</div>}

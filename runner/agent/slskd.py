@@ -23,32 +23,41 @@ class Slskd:
             await asyncio.sleep(1)
         return False
 
-    async def search(self, text: str, timeout_ms: int = 8000, cap_s: float = 15, response_limit: int = 500,
-                     file_limit: int = 25000):
-        """Run a search and yield (responses, state, done) once it ends.
+    async def search(self, text: str, on_progress=None, settle_s: float = 1.5, min_s: float = 2.5, cap_s: float = 6,
+                     response_limit: int = 1000, file_limit: int = 60000):
+        """Run a search, stop it once answers settle, and yield (responses, state, done=True) once.
 
-        - searchTimeout is in MILLISECONDS and counts from the last answer (Soulseek.NET). slskd's API description
-          says seconds, but SearchRequest.ToSearchOptions passes it unchanged; sending 12 ended searches at once.
-        - Stragglers keep resetting that window, so after `cap_s` the search is stopped (PUT /searches/{id},
-          slskd's Cancel), which keeps every response already received.
-        - slskd exposes responses only after a search ends (/responses and ?includeResponses=true are both
-          empty while it runs, live 2026-10-12), so there are no partial snapshots.
+        Measured live (check-search timeline, 2026-10-12): about 98% of answers arrive within 3-4 s;
+        waiting 15-28 s only adds stragglers (784 → 798, 182 → 184, 286 → 291 peers).
+        So: after `min_s`, stop as soon as no new answer arrived for `settle_s`; never wait past `cap_s`.
+        Stopping is slskd's Cancel (PUT /searches/{id}), which keeps every response.
+
+        searchTimeout is in MILLISECONDS and counts from the last answer (Soulseek.NET); slskd's API description
+        says seconds but passes the value through unchanged. It is set long here: our own rule decides.
+        slskd exposes responses only after a search ends, so progress is reported as counts (on_progress).
         """
         sid = str(uuid.uuid4())
-        body = {"id": sid, "searchText": text, "searchTimeout": timeout_ms, "responseLimit": response_limit,
+        body = {"id": sid, "searchText": text, "searchTimeout": int((cap_s + 5) * 1000), "responseLimit": response_limit,
                 "fileLimit": file_limit, "filterResponses": True}
         (await self.c.post("/searches", json=body)).raise_for_status()
         state, started, stopped = "", time.monotonic(), False
+        last_count, last_change = 0, time.monotonic()
         try:
-            while time.monotonic() - started < cap_s + 20:
+            while time.monotonic() - started < cap_s + 15:
                 s = (await self.c.get(f"/searches/{sid}")).json()
                 state = s.get("state") or ""
                 if s.get("endedAt"):
                     break
-                if not stopped and time.monotonic() - started >= cap_s:
+                now, count = time.monotonic(), s.get("responseCount") or 0
+                if count != last_count:
+                    last_count, last_change = count, now
+                    if on_progress:
+                        on_progress(count, s.get("fileCount") or 0)
+                elapsed = now - started
+                if not stopped and (elapsed >= cap_s or (elapsed >= min_s and now - last_change >= settle_s)):
                     await self.c.put(f"/searches/{sid}")
                     stopped = True
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.4)
             yield (await self.c.get(f"/searches/{sid}/responses")).json(), state, True
         finally:
             await self.c.delete(f"/searches/{sid}")

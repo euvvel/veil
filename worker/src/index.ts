@@ -134,6 +134,14 @@ app.get("/api/help", (c) => {
 
 app.get("/api/session", async (c) => c.json(await hub(c.env).appSession()));
 
+/** Client errors from the mini app (message and a short stack, digits masked), for diagnosis. */
+app.post("/api/client-error", async (c) => {
+  const b = await c.req.json<{ where?: string; message?: string; stack?: string }>().catch(() => ({}) as Record<string, string>);
+  const clean = (s: unknown, n: number) => (typeof s === "string" ? s.replace(/\d{6,}/g, "#").slice(0, n) : "");
+  console.log(JSON.stringify({ at: "client", where: clean(b.where, 20), message: clean(b.message, 300), stack: clean(b.stack, 800) }));
+  return c.json({ ok: true });
+});
+
 app.post("/api/session/:op", async (c) => {
   const m = c.get("member");
   if (m.role !== "admin") return notFound();

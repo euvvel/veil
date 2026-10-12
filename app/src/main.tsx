@@ -1,10 +1,11 @@
 import { render, type ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useErrorBoundary, useState } from "preact/hooks";
 import { ago, api, live, type Help, type HubEvent, type Me, type Prefs, type SessionInfo, type SessionState } from "./api.ts";
 import { Crossings } from "./crossings.tsx";
 import { Receive } from "./receive.tsx";
 import { Seek } from "./seek.tsx";
 import "./styles.css";
+import { report, watchErrors } from "./report.ts";
 import { applyTheme, haptic, tg } from "./tg.ts";
 
 /** Hub events fan out to whichever view is listening. */
@@ -262,4 +263,19 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById("root")!);
+/** If anything throws while rendering, say so and offer a way back instead of freezing. */
+function Guard({ children }: { children: ComponentChildren }) {
+  const [error, reset] = useErrorBoundary((e) => report(e, "render"));
+  if (error) {
+    return (
+      <div class="empty">
+        <p>Something slipped behind the veil.</p>
+        <button class="btn lead" onClick={() => { reset(); location.reload(); }}>Try again</button>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+watchErrors();
+render(<Guard><App /></Guard>, document.getElementById("root")!);

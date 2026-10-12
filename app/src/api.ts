@@ -117,6 +117,7 @@ export type HubEvent =
   | { type: "session.state"; data: { state: SessionState } }
   | { type: "search.done"; data: { sid: string; counts: Counts } }
   | { type: "search.update"; data: { sid: string; partial: boolean; counts: Counts } }
+  | { type: "search.progress"; data: { sid: string; responses: number; files: number } }
   | { type: "crossing"; data: Crossing };
 
 /** Live events from the Hub, reconnecting with backoff. Returns a stop function. */

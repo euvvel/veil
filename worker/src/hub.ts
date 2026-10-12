@@ -678,6 +678,12 @@ export class Hub extends DurableObject<Env> {
       case "runner.heartbeat":
         await this.save(prev, S.heartbeat(prev, now));
         break;
+      case "search.progress": {
+        // Counts only, straight to the member's sockets; nothing is stored.
+        const rec = await this.ctx.storage.get<SearchRec>(`s:${d.search_id as string}`);
+        if (rec) this.toMember(rec.member, "search.progress", { sid: rec.sid, responses: d.responses, files: d.files });
+        break;
+      }
       case "search.results":
         await this.onResults(d as Parameters<Hub["onResults"]>[0]);
         break;
