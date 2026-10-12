@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api, type Fmt, type Prefs, type SearchView, type View } from "./api.ts";
 import { onHub, toast } from "./main.tsx";
-import { haptic, tg } from "./tg.ts";
+import { haptic, tg, token } from "./tg.ts";
 
 const FMT_LABEL: Record<Fmt, string> = { flac: "FLAC", mp3: "MP3", any: "Any" };
 
@@ -88,7 +88,13 @@ export function Seek({ prefs, onCrossed }: { prefs: Prefs; onCrossed: () => void
         mb.hideProgress();
       }
     };
-    mb.setParams({ text: item?.direct ? "Let it cross (directly)" : "Let it cross", is_visible: Boolean(item), is_active: true });
+    mb.setParams({
+      text: item?.direct ? "Let it cross (directly)" : "Let it cross",
+      is_visible: Boolean(item),
+      is_active: true,
+      color: token("--spirit"),
+      text_color: token("--void"),
+    });
     mb.onClick(go);
     return () => mb.offClick(go);
   }, [sel, res, sid]);

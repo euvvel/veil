@@ -6,6 +6,8 @@
 //   s:<sid>  search record      r:<sid>  runner results     v:<sid>  items currently shown
 //   g:<gid>  crossing (group)   jg:<job> job → group        dj:<job> direct token (D8)
 //   wakers   chats waiting for /wake                          direct   tunnel base URL this session
+//   t:<tkt>  single-use socket ticket (60 s), so no login data ever sits in a logged URL
+//   alt:<job> peers already tried for a job (automatic fallback to another source)
 
 import { DurableObject } from "cloudflare:workers";
 import { hmacHex, randomHex } from "./crypto.ts";
@@ -26,6 +28,9 @@ const MAX_OPENINGS = 3;
 const EDIT_EVERY_MS = 4000;
 const SEARCH_TTL_MS = 6 * 3600_000;
 const MAX_AUTO_RINGS = 2;
+const TICKET_TTL_MS = 60_000;
+const MAX_SOURCES = 4; // the first peer plus up to three others with the same file
+const PEER_ERRORS = new Set(["connect", "timeout", "rejected", "queue", "not_shared", "unknown"]);
 
 type Origin = "bot" | "app";
 
@@ -182,6 +187,13 @@ export class Hub extends DurableObject<Env> {
     return this.load();
   }
 
+  /** A random single-use ticket for the mini app socket (request URLs are logged; headers are not). */
+  async ticket(memberKey: string): Promise<string> {
+    const t = randomHex(16);
+    await this.ctx.storage.put(`t:${t}`, { member: memberKey, exp: Date.now() + TICKET_TTL_MS });
+    return t;
+  }
+
   async ring(): Promise<RingResult> {
     const prev = await this.load();
     const { session, dispatch } = S.ring(prev, Date.now(), randomHex(8));
@@ -212,6 +224,7 @@ export class Hub extends DurableObject<Env> {
   private async afterGone(): Promise<void> {
     await this.ctx.storage.delete("direct");
     const now = Date.now();
+    for (const [key, t] of await this.ctx.storage.list<{ exp: number }>({ prefix: "t:" })) if (t.exp < now) await this.ctx.storage.delete(key);
     const searches = await this.ctx.storage.list<SearchRec>({ prefix: "s:" });
     let waiting = false;
     for (const [key, rec] of searches) {
@@ -263,8 +276,8 @@ export class Hub extends DurableObject<Env> {
     await this.env.DB.prepare("UPDATE searches SET result_count = ? WHERE id = ?").bind(d.files ?? 0, rec.sid).run();
 
     let msgId: number | undefined;
+    const { rendered } = await this.view(rec, rec.view, rec.fmt); // also fixes the shown list for taps
     if (rec.origin === "bot") {
-      const { rendered } = await this.view(rec, rec.view, rec.fmt);
       const sent = await this.tg("sendMessage", { chat_id: rec.chatId, ...rendered, link_preview_options: { is_disabled: true } });
       msgId = sent.result?.message_id;
     }
@@ -452,14 +465,59 @@ export class Hub extends DurableObject<Env> {
     }
   }
 
+  /** The same file (name and size) from another peer in the cached results, if any is left to try. */
+  private async retryElsewhere(m: JobStateMsg): Promise<boolean> {
+    const job = await this.env.DB.prepare("SELECT search_id, peer, path, size, chat_id, name, mode FROM jobs WHERE id = ?")
+      .bind(m.job_id).first<{ search_id: string; peer: string; path: string; size: number; chat_id: number; name: string; mode: JobMode }>();
+    if (!job?.peer || !job.path) return false;
+    const tried = (await this.ctx.storage.get<string[]>(`alt:${m.job_id}`)) ?? [job.peer];
+    if (tried.length >= MAX_SOURCES) return false;
+    const res = await this.ctx.storage.get<Results>(`r:${job.search_id}`);
+    if (!res) return false;
+    const want = basename(job.path).toLowerCase();
+    const scores = new Map(res.scores);
+    const candidates = res.folders
+      .filter((f) => !tried.includes(f.u))
+      .flatMap((f) => f.files.filter(([p, size]) => size === job.size && basename(p).toLowerCase() === want).map(([p]) => ({ u: f.u, path: p, free: f.f, q: f.q, score: scores.get(f.u) ?? 0.5 })))
+      .sort((a, b) => Number(b.free) - Number(a.free) || b.score - a.score || a.q - b.q);
+    const next = candidates[0];
+    if (!next) return false;
+
+    await this.peerStat(job.peer, m);
+    await this.ctx.storage.put(`alt:${m.job_id}`, [...tried, next.u]);
+    await this.env.DB.prepare("UPDATE jobs SET peer = ?, path = ?, state = 'pending', updated_at = ? WHERE id = ?").bind(next.u, next.path, Date.now(), m.job_id).run();
+    if ((await this.load()).state === "ready") {
+      this.toRunner("job.start", { job_id: m.job_id, peer: next.u, path: next.path, size: job.size, chat_id: job.chat_id, caption: job.name, mode: job.mode });
+    }
+    return true;
+  }
+
+  private async peerStat(peer: string, m: JobStateMsg): Promise<void> {
+    await this.peerStatStmt(peer, m, Date.now()).then((s) => s.run());
+  }
+
+  private async peerStatStmt(peer: string, m: JobStateMsg, now: number): Promise<D1PreparedStatement> {
+    const h = await hmacHex(this.env.PEER_HMAC_KEY, peer);
+    const ok = m.state === "delivered" ? 1 : 0;
+    const refused = m.error === "rejected" || m.error === "queue" ? 1 : 0;
+    return this.env.DB.prepare(
+      `INSERT INTO peer_stats (peer_hash, ok, fail, refused, avg_kbps, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(peer_hash) DO UPDATE SET ok = ok + excluded.ok, fail = fail + excluded.fail, refused = refused + excluded.refused,
+         avg_kbps = COALESCE((COALESCE(avg_kbps, excluded.avg_kbps) + excluded.avg_kbps) / 2, avg_kbps), last_seen = excluded.last_seen`,
+    ).bind(h, ok, 1 - ok, refused, m.kbps ?? null, now);
+  }
+
   private async onJobState(m: JobStateMsg): Promise<void> {
     const now = Date.now();
     const prev = this.progress.get(m.job_id);
     this.progress.set(m.job_id, { state: m.state, pct: m.pct, place: m.place, error: m.error });
     const changed = prev?.state !== m.state;
 
-    if (m.state === "delivered" || m.state === "failed") {
-      await this.ctx.storage.delete(`dj:${m.job_id}`);
+    if (m.state === "failed" && PEER_ERRORS.has(m.error ?? "") && (await this.retryElsewhere(m))) {
+      m = { job_id: m.job_id, state: "pending" };
+      this.progress.set(m.job_id, { state: "pending" });
+    } else if (m.state === "delivered" || m.state === "failed") {
+      await this.ctx.storage.delete([`dj:${m.job_id}`, `alt:${m.job_id}`]);
       await this.finishJob(m, now);
     } else if (changed) {
       await this.env.DB.prepare("UPDATE jobs SET state = ?, updated_at = ? WHERE id = ?").bind(m.state, now, m.job_id).run();
@@ -516,18 +574,7 @@ export class Hub extends DurableObject<Env> {
       db.prepare("UPDATE jobs SET state = ?, error = ?, track_id = ?, chat_id = NULL, peer = NULL, path = NULL, updated_at = ? WHERE id = ?")
         .bind(m.state, m.error ?? null, trackId, now, m.job_id),
     );
-    if (job.peer && !["too_large", "upload", "gave_up", "unclaimed"].includes(m.error ?? "")) {
-      const h = await hmacHex(this.env.PEER_HMAC_KEY, job.peer);
-      const ok = m.state === "delivered" ? 1 : 0;
-      const refused = m.error === "rejected" || m.error === "queue" ? 1 : 0;
-      stmts.push(
-        db.prepare(
-          `INSERT INTO peer_stats (peer_hash, ok, fail, refused, avg_kbps, last_seen) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(peer_hash) DO UPDATE SET ok = ok + excluded.ok, fail = fail + excluded.fail, refused = refused + excluded.refused,
-             avg_kbps = COALESCE((COALESCE(avg_kbps, excluded.avg_kbps) + excluded.avg_kbps) / 2, avg_kbps), last_seen = excluded.last_seen`,
-        ).bind(h, ok, 1 - ok, refused, m.kbps ?? null, now),
-      );
-    }
+    if (job.peer && !["too_large", "upload", "gave_up", "unclaimed"].includes(m.error ?? "")) stmts.push(await this.peerStatStmt(job.peer, m, now));
     await db.batch(stmts);
   }
 
@@ -541,9 +588,11 @@ export class Hub extends DurableObject<Env> {
       for (const old of this.ctx.getWebSockets(RUNNER)) if (old.readyState === WebSocket.OPEN) old.close(4000, "replaced");
       this.ctx.acceptWebSocket(server, [RUNNER]);
     } else {
-      // The Worker authenticated the member and passes their key; the DO is not reachable from outside.
-      const member = request.headers.get("X-Veil-Member") ?? "";
-      this.ctx.acceptWebSocket(server, [APP, `m:${member}`]);
+      const t = url.searchParams.get("t") ?? "";
+      const rec = /^[0-9a-f]{32}$/.test(t) ? await this.ctx.storage.get<{ member: string; exp: number }>(`t:${t}`) : undefined;
+      if (rec) await this.ctx.storage.delete(`t:${t}`);
+      if (!rec || rec.exp < Date.now()) return new Response("Not found", { status: 404 });
+      this.ctx.acceptWebSocket(server, [APP, `m:${rec.member}`]);
       const s = await this.load();
       server.send(frame("session.state", { state: s.state, label: label(s.state) }));
     }

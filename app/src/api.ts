@@ -63,7 +63,8 @@ export interface DirectFile {
   url: string;
 }
 
-const initData = () => tg?.initData ?? new URLSearchParams(location.search).get("tma") ?? "";
+// Outside Telegram (local preview only) initData can come from the hash, which never reaches a server log.
+const initData = () => tg?.initData ?? new URLSearchParams(location.hash.slice(1)).get("tma") ?? "";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -86,6 +87,7 @@ export const api = {
   crossings: () => call<{ active: Crossing[]; history: HistoryRow[] }>("GET", "/api/crossings"),
   direct: (gid: string) => call<DirectFile[]>("GET", `/api/direct/${gid}`),
   release: (job: string) => call<{ ok: boolean }>("POST", "/api/direct/release", { job }),
+  ticket: () => call<{ t: string }>("POST", "/api/ticket"),
 };
 
 export type HubEvent =
@@ -98,9 +100,20 @@ export function live(onEvent: (e: HubEvent) => void): () => void {
   let ws: WebSocket | undefined;
   let stopped = false;
   let delay = 1000;
-  const open = () => {
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/hub/app?tma=${encodeURIComponent(initData())}`;
-    ws = new WebSocket(url);
+  const retry = () => {
+    if (stopped) return;
+    setTimeout(open, delay);
+    delay = Math.min(delay * 2, 15000);
+  };
+  const open = async () => {
+    // Trade the signed initData (sent in a header) for a single-use ticket; only the ticket goes in the URL.
+    let t: string;
+    try {
+      t = (await api.ticket()).t;
+    } catch {
+      return retry();
+    }
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/hub/app?t=${t}`);
     ws.onopen = () => (delay = 1000);
     ws.onmessage = (m) => {
       try {
@@ -109,11 +122,7 @@ export function live(onEvent: (e: HubEvent) => void): () => void {
         // ignore malformed frames
       }
     };
-    ws.onclose = () => {
-      if (stopped) return;
-      setTimeout(open, delay);
-      delay = Math.min(delay * 2, 15000);
-    };
+    ws.onclose = retry;
   };
   open();
   return () => {

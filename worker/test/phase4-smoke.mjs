@@ -21,7 +21,8 @@ const api = async (method, path, body, id = ADMIN) => {
 };
 
 // member socket
-const appWs = new WebSocket(`${BASE.replace("http", "ws")}/hub/app?tma=${encodeURIComponent(await tma(ADMIN))}`);
+const { t } = await (await fetch(`${BASE}/api/ticket`, { method: "POST", headers: { Authorization: `tma ${await tma(ADMIN)}` } })).json();
+const appWs = new WebSocket(`${BASE.replace("http", "ws")}/hub/app?t=${t}`);
 const appInbox = [];
 appWs.onmessage = (e) => appInbox.push(JSON.parse(e.data));
 await new Promise((r) => (appWs.onopen = r));
@@ -89,6 +90,29 @@ send("runner.hello", { run_id: 1, agent: "fake", active_jobs: [], max_upload_mb:
 await next("hub.welcome");
 r = await api("POST", "/api/cross", { sid, index: 1 });
 assert.equal(r.body.ok, false); assert.match(r.body.error, /Too large/); ok("no tunnel → oversize refused");
+
+// a refusing peer → the same file from another peer
+send("runner.hello", { run_id: 1, agent: "fake", active_jobs: [], max_upload_mb: 50 });
+await next("hub.welcome");
+r = await api("POST", "/api/search", { query: "same", fmt: "flac" });
+const sid2 = r.body.sid;
+const ss2 = await next("search.start");
+send("search.results", { search_id: ss2.data.search_id, responses: 3, files: 3, folders: [
+  { u: "first", d: "a\\Album", f: true, q: 0, s: 9, files: [["a\\Album\\Same.flac", 20 * MB, "flac", null, 16, 44100, 100]] },
+  { u: "second", d: "b\\Other", f: true, q: 0, s: 5, files: [["b\\Other\\same.FLAC", 20 * MB, "flac", null, 16, 44100, 100]] },
+  { u: "third", d: "c\\X", f: true, q: 0, s: 5, files: [["c\\X\\Same.flac", 21 * MB, "flac", null, 16, 44100, 100]] },
+] });
+await sleep(400);
+r = await api("POST", "/api/cross", { sid: sid2, index: 0 });
+const first = await next("job.start");
+assert.equal(first.data.peer, "first");
+send("job.state", { job_id: first.data.job_id, state: "failed", error: "rejected" });
+const second = await next("job.start");
+assert.equal(second.data.job_id, first.data.job_id); assert.equal(second.data.peer, "second"); ok("refused → same file retried from another peer (size must match)");
+send("job.state", { job_id: first.data.job_id, state: "failed", error: "connect" });
+await sleep(400);
+const lostMsg = appInbox.filter((m) => m.type === "crossing" && m.data.jobs[0].id === first.data.job_id).pop();
+assert.equal(lostMsg.data.done, true); assert.equal(lostMsg.data.jobs[0].state, "failed"); ok("no source left → lost in the veil");
 
 ws.close(); appWs.close();
 console.log("\nphase 4 smoke: all checks passed");

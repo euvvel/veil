@@ -46,15 +46,14 @@ export const haptic = {
   fail: () => tg?.HapticFeedback.notificationOccurred("error"),
 };
 
-/** Follow Telegram's light/dark scheme; our tokens do the rest (docs/DESIGN.md). */
+export const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/** Follow Telegram's light/dark scheme, but keep veil's own field so Telegram's frame dissolves into it. */
 export function applyTheme(): void {
   const scheme = tg?.colorScheme ?? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
   document.documentElement.dataset.theme = scheme;
-  const bg = tg?.themeParams.bg_color;
-  if (bg) document.documentElement.style.setProperty("--tg-bg", bg);
   if (tg) {
-    const field = getComputedStyle(document.documentElement).getPropertyValue("--void").trim();
-    tg.setHeaderColor(bg ?? field);
-    tg.setBackgroundColor(bg ?? field);
+    tg.setHeaderColor(token("--void"));
+    tg.setBackgroundColor(token("--void"));
   }
 }

@@ -1,35 +1,40 @@
-/* veil — docs/DESIGN.md. Translucent, provisional; one accent; motion only for the crossing. */
-@import "@fontsource/cormorant-garamond/latin-400.css";
-@import "@fontsource/cormorant-garamond/latin-400-italic.css";
-@import "@fontsource/cormorant-garamond/latin-600.css";
+/* veil — docs/DESIGN.md. Moonlight on the far side of the veil: cold, dark, translucent; one spectral accent.
+   Type: IM Fell English (digitised 17th-century Fell types, the printed page of Hawthorne's age). */
+@import "@fontsource/im-fell-english/latin-400.css";
+@import "@fontsource/im-fell-english/latin-400-italic.css";
+@import "@fontsource/im-fell-english-sc/latin-400.css";
 
 :root {
-  --void: #0b0a0f;
-  --veil-1: rgba(220, 214, 240, 0.06);
-  --veil-2: rgba(220, 214, 240, 0.12);
-  --hair: rgba(233, 230, 242, 0.08);
-  --ink: #e9e6f2;
-  --ink-dim: rgba(233, 230, 242, 0.55);
-  --ember: #c8a96a;
-  --ember-glow: rgba(200, 169, 106, 0.35);
-  --lost: #b5626a;
-  --field: var(--tg-bg, var(--void));
-  --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
-  font-variant-numeric: lining-nums;
+  --void: #050408;
+  --deep: #110d20;
+  --veil-1: rgba(160, 150, 210, 0.045);
+  --veil-2: rgba(160, 150, 210, 0.09);
+  --hair: rgba(190, 180, 230, 0.08);
+  --ink: #d6d2e4;
+  --ink-dim: rgba(214, 210, 228, 0.46);
+  --spirit: #9c8fd4;
+  --spirit-ink: #cbc3f2;
+  --spirit-glow: rgba(124, 108, 214, 0.38);
+  --lost: #8e4656;
+  --field: var(--void);
+  --display: "IM Fell English", "Iowan Old Style", Georgia, serif;
+  --caps: "IM Fell English SC", "IM Fell English", Georgia, serif;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   --r: 14px;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --void: #f4f2ee;
-  --veil-1: rgba(30, 24, 50, 0.04);
-  --veil-2: rgba(30, 24, 50, 0.08);
-  --hair: rgba(29, 26, 36, 0.08);
-  --ink: #1d1a24;
-  --ink-dim: rgba(29, 26, 36, 0.55);
-  --ember: #8a6a2a;
-  --ember-glow: rgba(138, 106, 42, 0.25);
-  --lost: #9a3f48;
+  --void: #e9e8ee;
+  --deep: #d9d6e4;
+  --veil-1: rgba(40, 30, 80, 0.04);
+  --veil-2: rgba(40, 30, 80, 0.08);
+  --hair: rgba(30, 24, 60, 0.1);
+  --ink: #15131c;
+  --ink-dim: rgba(21, 19, 28, 0.55);
+  --spirit: #4f428a;
+  --spirit-ink: #3c3170;
+  --spirit-glow: rgba(79, 66, 138, 0.25);
+  --lost: #8a3446;
   color-scheme: light;
 }
 
@@ -40,14 +45,33 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+  background:
+    radial-gradient(120% 60% at 50% -12%, var(--deep) 0%, transparent 62%),
+    var(--field);
+  background-attachment: fixed;
 }
+/* Fog: two pale, blurred drifts behind everything. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+  background:
+    radial-gradient(40% 30% at 20% 30%, var(--veil-2), transparent 70%),
+    radial-gradient(35% 25% at 80% 70%, var(--veil-1), transparent 70%);
+  filter: blur(30px);
+  animation: fog 70s ease-in-out infinite alternate;
+}
+@keyframes fog { to { transform: translate(6%, -4%) scale(1.08); } }
 /* A fine, slowly drifting grain: the fabric of the veil. */
 body::before {
   content: "";
   position: fixed;
   inset: -50%;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: 0.045;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   animation: drift 40s linear infinite;
   z-index: 0;
@@ -67,19 +91,19 @@ input { font: inherit; color: inherit; }
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--hair);
 }
-.strip .veil { font-family: var(--display); font-size: 19px; font-style: italic; }
+.strip .veil { font-family: var(--display); font-size: 19px; font-style: italic; letter-spacing: 0.01em; }
 .strip .plain { color: var(--ink-dim); font-size: 12px; letter-spacing: 0.02em; }
 .strip .gear { margin-left: auto; color: var(--ink-dim); font-size: 18px; padding: 4px; }
 .mist { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim); transition: background 0.6s, box-shadow 0.6s, opacity 0.6s; }
-.mist.booting { background: var(--ember); opacity: 0.6; animation: breathe 2.4s ease-in-out infinite; }
-.mist.ready { background: var(--ember); box-shadow: 0 0 10px var(--ember-glow); }
-.mist.draining { background: var(--ember); opacity: 0.35; }
-@keyframes breathe { 50% { opacity: 1; box-shadow: 0 0 12px var(--ember-glow); } }
+.mist.booting { background: var(--spirit); opacity: 0.6; animation: breathe 2.4s ease-in-out infinite; }
+.mist.ready { background: var(--spirit-ink); box-shadow: 0 0 12px var(--spirit-glow); }
+.mist.draining { background: var(--spirit); opacity: 0.35; }
+@keyframes breathe { 50% { opacity: 1; box-shadow: 0 0 14px var(--spirit-glow); } }
 
 /* ---- tabs ---- */
-.tabs { display: flex; gap: 22px; margin: 18px 0 14px; }
-.tabs button { font-family: var(--display); font-size: 24px; color: var(--ink-dim); transition: color 0.3s; }
-.tabs button.on { color: var(--ink); }
+.tabs { display: flex; gap: 24px; margin: 20px 0 16px; }
+.tabs button { font-family: var(--caps); font-size: 22px; letter-spacing: 0.06em; color: var(--ink-dim); transition: color 0.4s, text-shadow 0.4s; }
+.tabs button.on { color: var(--ink); text-shadow: 0 0 18px var(--spirit-glow); }
 
 /* ---- layers ---- */
 .layer {
@@ -92,7 +116,7 @@ input { font: inherit; color: inherit; }
 
 .seekbar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; }
 .seekbar input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; padding: 8px 0; font-size: 16px; }
-.seekbar input::placeholder { color: var(--ink-dim); font-family: var(--display); font-style: italic; font-size: 18px; }
+.seekbar input::placeholder { color: var(--ink-dim); font-family: var(--display); font-style: italic; font-size: 17px; }
 
 .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--veil-1); border: 1px solid var(--hair); }
 .seg button { padding: 5px 10px; border-radius: 8px; font-size: 13px; color: var(--ink-dim); }
@@ -100,24 +124,24 @@ input { font: inherit; color: inherit; }
 .row-controls { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
 
 .note { color: var(--ink-dim); font-size: 13px; margin: 0 0 10px; font-style: italic; }
-.empty { text-align: center; color: var(--ink-dim); font-family: var(--display); font-style: italic; font-size: 20px; padding: 48px 0; }
+.empty { text-align: center; color: var(--ink-dim); font-family: var(--display); font-style: italic; font-size: 20px; padding: 56px 0; letter-spacing: 0.01em; }
 
 /* ---- results ---- */
 .results { display: flex; flex-direction: column; gap: 8px; }
 .result { display: block; width: 100%; text-align: left; padding: 12px 14px; transition: background 0.25s, border-color 0.25s; }
-.result.sel { background: var(--veil-2); border-color: var(--ember-glow); }
+.result.sel { background: var(--veil-2); border-color: var(--spirit-glow); box-shadow: 0 0 22px -8px var(--spirit-glow); }
 .result .name { font-size: 15px; overflow-wrap: anywhere; }
 .result .detail { color: var(--ink-dim); font-size: 12.5px; margin-top: 2px; }
 .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--hair); font-size: 11px; color: var(--ink-dim); }
 
 /* ---- crossings: the parting ---- */
 .crossing { position: relative; overflow: hidden; padding: 14px; transition: max-height 0.6s ease, opacity 0.6s ease, padding 0.6s ease; max-height: 140px; }
-.crossing .name { font-family: var(--display); font-size: 18px; position: relative; z-index: 2; overflow-wrap: anywhere; }
+.crossing .name { font-size: 15px; position: relative; z-index: 2; overflow-wrap: anywhere; } /* file names are machinery: UI font (IM Fell has no lining figures) */
 .crossing .text { color: var(--ink-dim); font-size: 12.5px; position: relative; z-index: 2; margin-top: 2px; }
 .crossing .half { position: absolute; top: 0; bottom: 0; width: 50%; background: var(--veil-2); z-index: 1; transition: transform 0.9s cubic-bezier(.2,.7,.2,1); }
 .crossing .half.l { left: 0; transform: translateX(calc(var(--p, 0) * -1%)); }
 .crossing .half.r { right: 0; transform: translateX(calc(var(--p, 0) * 1%)); }
-.crossing .ember { position: absolute; left: 50%; bottom: 0; height: 2px; width: calc(var(--p, 0) * 1%); transform: translateX(-50%); background: var(--ember); box-shadow: 0 0 10px var(--ember-glow); z-index: 2; transition: width 0.9s cubic-bezier(.2,.7,.2,1); }
+.crossing .ember { position: absolute; left: 50%; bottom: 0; height: 1.5px; width: calc(var(--p, 0) * 1%); transform: translateX(-50%); background: var(--spirit-ink); box-shadow: 0 0 12px var(--spirit-glow), 0 0 2px var(--spirit-ink); z-index: 2; transition: width 0.9s cubic-bezier(.2,.7,.2,1); }
 .crossing.lost .text { color: var(--lost); }
 .crossing.closed { max-height: 34px; padding: 6px 14px; opacity: 0.55; }
 .crossing.closed .half { transform: translateX(0); }
@@ -125,30 +149,30 @@ input { font: inherit; color: inherit; }
 .crossing .act { margin-top: 10px; position: relative; z-index: 2; }
 
 .history { margin-top: 26px; }
-.history h3 { font-family: var(--display); font-weight: 400; font-style: italic; font-size: 18px; color: var(--ink-dim); margin: 0 0 8px; }
+.history h3 { font-family: var(--caps); font-weight: 400; font-size: 17px; letter-spacing: 0.08em; color: var(--ink-dim); margin: 0 0 8px; }
 .history li { list-style: none; padding: 7px 0; border-bottom: 1px solid var(--hair); font-size: 14px; }
 .history li span { color: var(--ink-dim); font-size: 12px; margin-left: 6px; }
 .history ul { margin: 0; padding: 0; }
 
 /* ---- buttons ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border-radius: 12px; background: var(--veil-2); border: 1px solid var(--hair); font-size: 14px; }
-.btn.ember { background: var(--ember); color: var(--void); border-color: transparent; }
+.btn.ember { background: color-mix(in srgb, var(--spirit) 18%, transparent); color: var(--spirit-ink); border-color: color-mix(in srgb, var(--spirit) 40%, transparent); box-shadow: 0 0 20px -10px var(--spirit-glow); }
 .btn[disabled] { opacity: 0.5; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
 
 /* ---- sheet ---- */
-.scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); z-index: 10; animation: fade 0.3s; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; max-width: 640px; margin: 0 auto; padding: 20px 16px 32px; border-radius: 18px 18px 0 0; background: color-mix(in srgb, var(--field) 88%, var(--ink) 4%); border: 1px solid var(--hair); animation: lift 0.35s cubic-bezier(.2,.7,.2,1); }
+.scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 10; animation: fade 0.3s; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; max-width: 640px; margin: 0 auto; padding: 20px 16px 32px; border-radius: 18px 18px 0 0; background: color-mix(in srgb, var(--deep) 70%, var(--field)); border: 1px solid var(--hair); animation: lift 0.35s cubic-bezier(.2,.7,.2,1); }
 .sheet h2 { font-family: var(--display); font-weight: 400; font-size: 26px; margin: 0 0 14px; }
 .field { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--hair); }
 .field small { display: block; color: var(--ink-dim); font-size: 12px; }
-input[type="range"] { accent-color: var(--ember); width: 140px; }
-input[type="checkbox"] { accent-color: var(--ember); width: 20px; height: 20px; }
+input[type="range"] { accent-color: var(--spirit); width: 140px; }
+input[type="checkbox"] { accent-color: var(--spirit); width: 20px; height: 20px; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes lift { from { transform: translateY(30px); opacity: 0; } }
 
 .beyond { text-align: center; padding: 56px 12px; }
-.beyond p { font-family: var(--display); font-style: italic; font-size: 21px; color: var(--ink-dim); margin: 0 0 6px; }
+.beyond p { font-family: var(--display); font-style: italic; font-size: 22px; color: var(--ink-dim); margin: 0 0 8px; text-shadow: 0 0 20px var(--spirit-glow); }
 .beyond small { color: var(--ink-dim); }
 
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 20; padding: 10px 16px; border-radius: 12px; background: var(--veil-2); border: 1px solid var(--hair); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); font-size: 14px; animation: lift 0.3s; max-width: calc(100% - 32px); }

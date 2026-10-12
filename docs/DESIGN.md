@@ -34,24 +34,25 @@ Screen names:
 
 ### Colour
 
-Dark-first. The app reads Telegram `themeParams`, uses `bg_color` as its base, and lays the veil tokens over it so it still feels native in Telegram's light theme.
+Moonlight on the far side of the veil (revised 2026-10-12 at the owner's request: "darker and mystical", away from warm candlelight). The app keeps its own field and paints Telegram's header and background to match, so the frame dissolves into it.
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| `--void` | `#0b0a0f` | `#f4f2ee` | page field, used only if Telegram gives no bg |
-| `--veil-1` | `rgba(220,214,240,.06)` | `rgba(30,24,50,.04)` | first layer (lists) |
-| `--veil-2` | `rgba(220,214,240,.12)` | `rgba(30,24,50,.08)` | raised layer (sheets, focused row) |
-| `--ink` | `#e9e6f2` | `#1d1a24` | primary text |
-| `--ink-dim` | `rgba(233,230,242,.55)` | `rgba(29,26,36,.55)` | secondary text, plain labels |
-| `--ember` | `#c8a96a` | `#8a6a2a` | the single accent: crossing progress, primary action |
-| `--lost` | `#b5626a` | `#9a3f48` | failures only |
+| `--void` | `#050408` | `#e9e8ee` | the field: black with a violet undertone |
+| `--deep` | `#110d20` | `#d9d6e4` | the glow at the top of the field, sheets |
+| `--veil-1` | `rgba(160,150,210,.045)` | `rgba(40,30,80,.04)` | first layer (lists), fog |
+| `--veil-2` | `rgba(160,150,210,.09)` | `rgba(40,30,80,.08)` | raised layer, selection, the parting halves |
+| `--ink` | `#d6d2e4` | `#15131c` | primary text, cold and pale |
+| `--ink-dim` | `rgba(214,210,228,.46)` | `rgba(21,19,28,.55)` | secondary text, plain labels |
+| `--spirit` / `--spirit-ink` | `#9c8fd4` / `#cbc3f2` | `#4f428a` / `#3c3170` | the single accent: a spectral violet for the crossing line, the selection glow, the primary action |
+| `--lost` | `#8e4656` | `#8a3446` | failures only: a dim crimson |
 
-Use one accent colour only. Gold-ember is candlelight seen through fabric.
+There is one accent, and it is never warm. Backgrounds carry a faint grain and two slow, blurred fog drifts (70 s); both stop under `prefers-reduced-motion`.
 
 ### Type
-- **Display:** *Cormorant Garamond* (or a similar old-style serif), self-hosted in Worker assets so no third-party font request is made. Used for screen titles, track titles in the crossing, and Explore reasons.
-- **UI:** the system stack (`-apple-system, Roboto, …`) for everything functional: sizes, bitrates, buttons.
-- The pairing reflects the theme: the poem's voice for things beyond, and plain type for the machinery.
+- **Display:** *IM Fell English* (OFL), the digitised 17th-century Fell types, the printed page of Hawthorne's age. Self-hosted in Worker assets, so no third-party font request is made. Used for the veil's own words: the status line, empty states, Beyond.
+- **Small caps:** *IM Fell English SC*, letter-spaced, for the tabs and section headings.
+- **UI:** the system stack for everything functional: file names, sizes, bitrates, buttons. IM Fell has no lining figures, so numbers and file names never use it.
 
 ### Surfaces
 - Layers use `backdrop-filter: blur(12px)` plus a `--veil-*` fill and a 1px hairline at 8% ink. If blur isn't supported, fall back to a solid fill.
@@ -62,7 +63,7 @@ Use one accent colour only. Gold-ember is candlelight seen through fabric.
 | Moment | Motion |
 |---|---|
 | booting | The background mist slowly brightens (opacity 0.4 → 1 over the boot). |
-| downloading | **The parting:** two translucent halves over the row draw apart from the centre as progress grows. The ember line in the gap is the progress bar. |
+| downloading | **The parting:** two translucent halves over the row draw apart from the centre as progress grows. A thin spectral line in the gap is the progress bar. |
 | delivered | The halves close again, the row collapses to one dim text line, and `HapticFeedback.notificationOccurred('success')` fires. |
 | failed | The row dims to `--lost` with no shake. |
 | Explore tap | The card's veil lifts (translate-y + fade), then Seek opens prefilled. |

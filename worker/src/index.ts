@@ -43,7 +43,7 @@ app.get("/hub/runner", async (c) => {
   return hub(c.env).fetch(new Request("https://hub/runner", c.req.raw));
 });
 
-/** Mini app auth: `Authorization: tma <initData>`, or `?tma=` for WebSockets (browsers cannot set WS headers).
+/** Mini app auth: `Authorization: tma <initData>` (headers are not logged; URLs are).
  *  In a private chat with the bot, the chat id equals the user id, so it doubles as the delivery chat. */
 async function memberFrom(env: Env, initData: string | undefined): Promise<{ member: Member; userId: number } | null> {
   const r = await validateInitData(initData, env.VEIL_BOT_TOKEN, INIT_DATA_MAX_AGE_S, Math.floor(Date.now() / 1000));
@@ -52,13 +52,11 @@ async function memberFrom(env: Env, initData: string | undefined): Promise<{ mem
   return member ? { member, userId: r.user.id } : null;
 }
 
+/** Mini app socket: `?t=<ticket>` from POST /api/ticket. The Hub checks and spends the ticket. */
 app.get("/hub/app", async (c) => {
-  if (c.req.header("Upgrade") !== "websocket") return notFound();
-  const who = await memberFrom(c.env, c.req.query("tma"));
-  if (!who) return notFound();
-  const req = new Request("https://hub/app", c.req.raw);
-  req.headers.set("X-Veil-Member", who.member.member_key);
-  return hub(c.env).fetch(req);
+  const t = c.req.query("t") ?? "";
+  if (c.req.header("Upgrade") !== "websocket" || !/^[0-9a-f]{32}$/.test(t)) return notFound();
+  return hub(c.env).fetch(new Request(`https://hub/app?t=${t}`, c.req.raw));
 });
 
 app.use("/api/*", async (c, next) => {
@@ -74,6 +72,8 @@ const FORMATS: Fmt[] = ["flac", "mp3", "any"];
 const VIEWS: View[] = ["t", "a"];
 const fmtOf = (v: unknown) => (FORMATS.includes(v as Fmt) ? (v as Fmt) : undefined);
 const viewOf = (v: unknown) => (VIEWS.includes(v as View) ? (v as View) : undefined);
+
+app.post("/api/ticket", async (c) => c.json({ t: await hub(c.env).ticket(c.get("member").member_key) }));
 
 app.get("/api/me", async (c) => {
   const m = c.get("member");

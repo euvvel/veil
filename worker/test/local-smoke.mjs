@@ -74,7 +74,11 @@ const bad = new WebSocket(`${BASE.replace("http", "ws")}/hub/runner`, { headers:
 assert.equal(await new Promise((res) => { bad.onopen = () => res("open"); bad.onerror = () => res("refused"); }), "refused");
 ok("runner with wrong secret → refused");
 
-const app = new WebSocket(`${BASE.replace("http", "ws")}/hub/app?tma=${encodeURIComponent(await initData(ADMIN))}`);
+const bad2 = new WebSocket(`${BASE.replace("http", "ws")}/hub/app?t=${"0".repeat(32)}`);
+assert.equal(await new Promise((res) => { bad2.onopen = () => res("open"); bad2.onerror = () => res("refused"); }), "refused");
+ok("app socket with an unknown ticket → refused");
+const { t: ticket } = await (await fetch(`${BASE}/api/ticket`, { method: "POST", headers: { Authorization: `tma ${await initData(ADMIN)}` } })).json();
+const app = new WebSocket(`${BASE.replace("http", "ws")}/hub/app?t=${ticket}`);
 const appStates = [];
 app.onmessage = (e) => appStates.push(JSON.parse(e.data).data.state);
 await new Promise((res, rej) => { app.onopen = res; app.onerror = rej; });
