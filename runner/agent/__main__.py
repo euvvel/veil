@@ -27,6 +27,7 @@ HEARTBEAT_S = 30
 MAX_FOLDERS, MAX_FILES = 25, 25
 AWAIT_S = 30 * 60  # how long a direct file waits at the veil's edge
 RELEASE_GRACE_S = 90  # after release, give a just-accepted download time to start
+BUSY_LIMIT_S = 10 * 60  # a transfer in progress may delay cleanup, but never longer than this
 
 
 def log(msg: str) -> None:
@@ -287,7 +288,8 @@ class Agent:
             return
         now = time.monotonic()
         for job in [j for j in self.jobs.values() if j.state == "awaiting" and j.token]:
-            if self.door.busy(job.token):
+            due = job.offered_at + AWAIT_S if not job.released_at else job.released_at + RELEASE_GRACE_S
+            if self.door.busy(job.token) and now - due < BUSY_LIMIT_S:
                 continue
             if job.released_at and now - job.released_at >= RELEASE_GRACE_S:
                 self.close_direct(job, "delivered")

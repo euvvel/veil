@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 CHUNK = 256 * 1024
+STALL_S = 60  # a reader that accepts nothing for this long is dropped, so it cannot pin a file
 TYPES = {"flac": "audio/flac", "mp3": "audio/mpeg", "m4a": "audio/mp4", "ogg": "audio/ogg", "opus": "audio/ogg", "wav": "audio/wav"}
 
 
@@ -63,11 +64,11 @@ class Door:
                 await self._serve(writer, method, headers, w, cors)
             else:
                 await self._reply(writer, 404, [])
-        except (ConnectionError, OSError):
+        except (ConnectionError, OSError, asyncio.TimeoutError):
             pass
         finally:
             try:
-                writer.close()
+                writer.transport.abort() if writer.transport.get_write_buffer_size() else writer.close()
                 await writer.wait_closed()
             except (ConnectionError, OSError):
                 pass
@@ -118,7 +119,7 @@ class Door:
                     if not chunk:
                         break
                     writer.write(chunk)
-                    await writer.drain()
+                    await asyncio.wait_for(writer.drain(), STALL_S)
                     left -= len(chunk)
             if start == 0 and end == size - 1:
                 w.served += 1
