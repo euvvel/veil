@@ -40,3 +40,17 @@ Short records of decisions that shape the project. Newest at the bottom.
   - Non-members get total silence: no reply, no commands, 404 from the API.
   - The courier bot never processes updates.
   - A raw chat id exists only on an in-flight job and is cleared on delivery.
+
+### D8 · Files over 50 MB: direct crossing, then into the chat (2026-10-12)
+- **Context:**
+  - Without an API ID there is no local Bot API server.
+  - A bot can only *upload* 50 MB. Re-sending a `file_id` has no limit, but getting a file onto Telegram's servers above 50 MB needs an MTProto client, which needs an API ID.
+  - The owner rules out any change to the file: no transcoding, no re-compression, no splitting.
+- **Decision:**
+  - Oversize files are streamed **untouched** from the runner through a **named Cloudflare Tunnel** (owner's domain; quick tunnels rejected) to the veil mini app, using a one-time signed link.
+  - The mini app offers **"Put it in the chat"**: the Web Share API hands the file to the user's own Telegram app, which uploads it.
+  - Fallback is **"Save to device"** with `WebApp.downloadFile` (Bot API 8.0).
+- **Consequence:**
+  - The runner keeps an unclaimed file at most 30 min, then deletes it.
+  - The runner stays up until the file is claimed or that time passes.
+  - When an API ID becomes available, courier sends up to 2 GB automatically, and this path remains the fallback above 2 GB.
