@@ -57,15 +57,37 @@ test("albums view groups a folder's matching files", () => {
   assert.equal(a.kind === "a" && a.files.length, 2);
 });
 
-test("render: number buttons, format and view toggles, callback data under 64 bytes", () => {
-  const fs = [folder("p", true, Array.from({ length: 10 }, (_, i) => [`x\\${i}.flac`, 30 * MB, "flac", null, 16, 44100, 100] as Folder["files"][number]))];
-  const out = render("a1b2c3d4e5", "nine inch nails ghosts", "t", "flac", rank(fs, "t", "flac", prefs, new Map()), 50);
+test("render: page of 8, page row, toggles, callback data under 64 bytes", () => {
+  const fs = [folder("p", true, Array.from({ length: 19 }, (_, i) => [`x\\${String(i).padStart(2, "0")}.flac`, 30 * MB, "flac", null, 16, 44100, 100] as Folder["files"][number]))];
+  const ranked = rank(fs, "t", "flac", prefs, new Map());
+  const out = render("a1b2c3d4e5", "nine inch nails ghosts", "t", "flac", ranked, 50, 0, { tracks: 19, albums: 1 });
   const kb = out.reply_markup.inline_keyboard;
   assert.equal(kb[0]!.length, 4);
   assert.equal(kb[1]!.length, 4);
-  assert.equal(kb[2]!.map((b) => b.text).join(","), "· FLAC ·,MP3,Any");
+  assert.deepEqual(kb[2]!.map((b) => b.text), ["·", "1 / 3", "▶"]);
+  assert.equal(kb[3]!.map((b) => b.text).join(","), "· FLAC ·,MP3,Any");
   assert.ok(kb.flat().every((b) => new TextEncoder().encode(b.callback_data).length <= 64));
-  assert.match(out.text, /^Seek · nine inch nails ghosts\nFLAC · tracks · 8 of 10/);
+  assert.match(out.text, /^Seek · nine inch nails ghosts\nFLAC · tracks · 19 tracks · 1 albums/);
+});
+
+test("render: later pages number items absolutely and tap the right index", () => {
+  const fs = [folder("p", true, Array.from({ length: 19 }, (_, i) => [`x\\${String(i).padStart(2, "0")}.flac`, 30 * MB, "flac", null, 16, 44100, 100] as Folder["files"][number]))];
+  const out = render("s", "q", "t", "flac", rank(fs, "t", "flac", prefs, new Map()), 50, 2);
+  const kb = out.reply_markup.inline_keyboard;
+  assert.deepEqual(kb[0]!.map((b) => b.text), ["17", "18", "19"]);
+  assert.equal(kb[0]![0]!.callback_data, "s:s:d:16");
+  assert.deepEqual(kb[1]!.map((b) => b.text), ["◀", "3 / 3", "·"]);
+  assert.match(out.text, /^17\. 16\.flac/m);
+});
+
+test("render: oversize says direct when the tunnel is up", () => {
+  const fs = [folder("p", true, [["x\\huge.flac", 80 * MB, "flac", null, 24, 96000, 100]])];
+  assert.match(render("s", "q", "t", "flac", rank(fs, "t", "flac", prefs, new Map()), 50, 0, undefined, true).text, / · direct/);
+});
+
+test("rank keeps more than one page", () => {
+  const fs = [folder("p", true, Array.from({ length: 30 }, (_, i) => [`x\\${i}.flac`, 30 * MB, "flac", null, 16, 44100, 100] as Folder["files"][number]))];
+  assert.equal(rank(fs, "t", "flac", prefs, new Map()).items.length, 30);
 });
 
 test("render marks files above the upload limit", () => {

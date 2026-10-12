@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Crossing, type HistoryRow } from "./api.ts";
+import { ago, api, type Crossing, type HistoryRow } from "./api.ts";
 import { onHub } from "./main.tsx";
 import { haptic } from "./tg.ts";
 
@@ -31,9 +31,12 @@ function Row({ c }: { c: Crossing }) {
   );
 }
 
-export function Crossings({ visible }: { visible: boolean }) {
+const titleOf = (h: HistoryRow) => (h.artist && h.title ? `${h.artist} – ${h.title}` : h.name.replace(/\.[a-z0-9]+$/i, ""));
+const queryOf = (h: HistoryRow) => (h.artist && h.title ? `${h.artist} ${h.title}` : h.name.replace(/\.[a-z0-9]+$/i, "").replace(/^\d+[\s.\-_]+/, ""));
+
+export function Crossings({ visible, onSeek }: { visible: boolean; onSeek: (q: string) => void }) {
   const [active, setActive] = useState<Crossing[]>([]);
-  const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
 
   const refresh = () =>
     api.crossings().then((r) => {
@@ -67,22 +70,30 @@ export function Crossings({ visible }: { visible: boolean }) {
     [],
   );
 
+  if (history === null) return <div class="empty">…</div>;
   return (
     <section>
+      {active.length > 0 && (
+        <>
+          <h3 class="section">Now</h3>
+          <div class="stack">{active.map((c) => <Row key={c.gid} c={c} />)}</div>
+        </>
+      )}
       {active.length === 0 && history.length === 0 && <div class="empty">Nothing has crossed yet.</div>}
-      <div class="stack">{active.map((c) => <Row key={c.gid} c={c} />)}</div>
       {history.length > 0 && (
-        <div class="history">
-          <h3>Crossed</h3>
-          <ul>
+        <>
+          <h3 class="section">Crossed</h3>
+          <ul class="history">
             {history.map((h) => (
               <li>
-                {h.artist && h.title ? `${h.artist} – ${h.title}` : h.name}
-                <span>{(h.format ?? "").toUpperCase()}</span>
+                <button onClick={() => { haptic.tap(); onSeek(queryOf(h)); }} title="Seek it again">
+                  <span class="h-title">{titleOf(h)}</span>
+                  <span class="h-meta">{[h.album, (h.format ?? "").toUpperCase(), ago(h.at)].filter(Boolean).join(" · ")}</span>
+                </button>
               </li>
             ))}
           </ul>
-        </div>
+        </>
       )}
     </section>
   );

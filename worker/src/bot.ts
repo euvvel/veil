@@ -1,9 +1,10 @@
 // veil bot webhook. Members get answers; everyone else gets silence (an empty 200).
-// Replies ride on the webhook response (Bot API: "reply directly to a webhook"),
-// so a reply costs no extra subrequest.
+// Handlers return the reply as a `{ method, ...params }` response; index.ts sends it with an explicit
+// Bot API call and logs the outcome (REPLY_MODE=webhook keeps it on the webhook response for local tests).
 
 import type { Env } from "./env.ts";
 import { hub } from "./env.ts";
+import { helpText, MENU_VERSION, menuFor } from "./help.ts";
 import * as M from "./members.ts";
 import type { Fmt } from "./protocol.ts";
 import { label } from "./words.ts";
@@ -42,22 +43,34 @@ export async function tg(env: Env, method: string, body: unknown): Promise<Respo
   });
 }
 
-const SEEK = { command: "seek", description: "Seek a track: /seek [flac|mp3|any] words (or /s)" };
-const HISTORY = { command: "history", description: "Your last crossings" };
-const STATUS = { command: "status", description: "Is the veil open?" };
+/** An inline "Open veil" button, when the mini app URL is configured. */
+const openVeil = (env: Env) =>
+  env.APP_URL ? { reply_markup: { inline_keyboard: [[{ text: "Open veil", web_app: { url: env.APP_URL } }]] } } : {};
 
-const COMMANDS: Record<M.Role, { command: string; description: string }[]> = {
-  admin: [
-    SEEK,
-    HISTORY,
-    STATUS,
-    { command: "wake", description: "Part the veil (start the runner)" },
-    { command: "sleep", description: "Let the veil fall now" },
-    { command: "invite", description: "Let someone through, once" },
-    { command: "members", description: "Who may cross" },
-  ],
-  member: [SEEK, HISTORY, STATUS, { command: "leave", description: "Be forgotten" }],
-};
+/** Commands and the mini app button are scoped to member chats only, so strangers see nothing. */
+const setMenu = (env: Env, chatId: number, role: M.Role) =>
+  Promise.all([
+    tg(env, "setMyCommands", { commands: menuFor(role), scope: { type: "chat", chat_id: chatId } }),
+    env.APP_URL
+      ? tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "web_app", text: "veil", web_app: { url: env.APP_URL } } })
+      : Promise.resolve(),
+  ]);
+
+const clearMenu = (env: Env, chatId: number) =>
+  Promise.all([
+    tg(env, "deleteMyCommands", { scope: { type: "chat", chat_id: chatId } }),
+    tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "default" } }),
+  ]);
+
+/** Refresh a member's menu once after the command set changes (no need to /start again). */
+async function refreshMenu(env: Env, member: M.Member, chatId: number, waitUntil: (p: Promise<unknown>) => void) {
+  const prefs = JSON.parse(member.prefs) as Record<string, unknown>;
+  if (prefs.menu_v === MENU_VERSION) return;
+  waitUntil(setMenu(env, chatId, member.role));
+  await env.DB.prepare("UPDATE members SET prefs = ? WHERE member_key = ?")
+    .bind(JSON.stringify({ ...prefs, menu_v: MENU_VERSION }), member.member_key)
+    .run();
+}
 
 const FORMATS: Fmt[] = ["flac", "mp3", "any"];
 
@@ -73,14 +86,16 @@ async function seek(env: Env, member: M.Member, chatId: number, arg: string): Pr
     const last = await env.DB.prepare("SELECT query, format_filter FROM searches WHERE user_id = ? ORDER BY created_at DESC LIMIT 1")
       .bind(member.member_key)
       .first<{ query: string; format_filter: Fmt }>();
-    if (!last) return say(chatId, "Seek what? /seek [flac|mp3|any] artist title");
+    if (!last) return say(chatId, "Seek what?\n/seek [flac|mp3|any] artist title");
     words = last.query;
     if (!FORMATS.includes(first)) fmt = last.format_filter;
   }
   const { state } = await hub(env).search(member, chatId, words.slice(0, 200), fmt);
   return say(
     chatId,
-    state === "ready" ? `Listening beyond · Searching “${words}”…` : `${label(state === "offline" ? "booting" : state)}\nI'll seek “${words}” as soon as the veil opens.`,
+    state === "ready"
+      ? `Listening beyond · “${words}”\nResults in about fifteen seconds.`
+      : `${label(state === "offline" ? "booting" : state)}\nI'll seek “${words}” as soon as the veil opens (under a minute).`,
   );
 }
 
@@ -89,28 +104,9 @@ async function history(env: Env, member: M.Member, chatId: number): Promise<Resp
     `SELECT j.name, j.format, t.artist, t.title FROM jobs j LEFT JOIN tracks t ON t.id = j.track_id
      WHERE j.user_id = ? AND j.state = 'delivered' ORDER BY j.updated_at DESC LIMIT 10`,
   ).bind(member.member_key).all<{ name: string; format: string; artist: string | null; title: string | null }>();
-  if (!results.length) return say(chatId, "Nothing has crossed yet.");
-  const lines = results.map((r) => `• ${r.artist && r.title ? `${r.artist} – ${r.title}` : r.name} · ${(r.format ?? "").toUpperCase()}`);
-  return say(chatId, `Last crossings:\n${lines.join("\n")}`);
-}
-
-/** Commands and the mini app button are scoped to member chats only, so strangers see nothing. */
-const setCommands = (env: Env, chatId: number, role: M.Role) =>
-  Promise.all([
-    tg(env, "setMyCommands", { commands: COMMANDS[role], scope: { type: "chat", chat_id: chatId } }),
-    env.APP_URL
-      ? tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "web_app", text: "veil", web_app: { url: env.APP_URL } } })
-      : Promise.resolve(),
-  ]);
-
-const clearCommands = (env: Env, chatId: number) =>
-  Promise.all([
-    tg(env, "deleteMyCommands", { scope: { type: "chat", chat_id: chatId } }),
-    tg(env, "setChatMenuButton", { chat_id: chatId, menu_button: { type: "default" } }),
-  ]);
-
-function help(role: M.Role): string {
-  return COMMANDS[role].map((c) => `/${c.command} · ${c.description}`).join("\n");
+  if (!results.length) return say(chatId, "Nothing has crossed yet. Try /seek.");
+  const lines = results.map((r, i) => `${i + 1}. ${r.artist && r.title ? `${r.artist} – ${r.title}` : r.name} · ${(r.format ?? "").toUpperCase()}`);
+  return say(chatId, `Last crossings\n\n${lines.join("\n")}`, openVeil(env));
 }
 
 export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Promise<unknown>) => void): Promise<Response> {
@@ -147,31 +143,34 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
   const cmd = cmdRaw.replace(/@.*$/, "").toLowerCase();
   console.log(JSON.stringify({ at: "update", kind: "message", cmd: cmd.startsWith("/") ? cmd.slice(0, 16) : "(text)" }));
 
-  let member = await M.activeMember(env.DB, key);
+  const member = await M.activeMember(env.DB, key);
 
   if (cmd === "/start" && !member) {
     if (await M.claim(env.DB, env.CLAIM_SECRET, arg, key, now)) {
-      waitUntil(setCommands(env, chatId, "admin"));
-      return say(chatId, `The veil knows you now. You are its keeper.\n\n${help("admin")}`);
+      waitUntil(setMenu(env, chatId, "admin"));
+      return say(chatId, `The veil knows you now. You are its keeper.\n\n${helpText("admin", env.COURIER_USERNAME)}`, openVeil(env));
     }
     if (await M.redeemInvite(env.DB, arg, key, now)) {
-      waitUntil(setCommands(env, chatId, "member"));
-      return say(chatId, `You were let through. The veil knows you now.\n\n${help("member")}`);
+      waitUntil(setMenu(env, chatId, "member"));
+      return say(
+        chatId,
+        `You were let through. The veil knows you now.\n\nOne thing first: open @${env.COURIER_USERNAME} and press Start, so it may bring files to you.\n\n${helpText("member", env.COURIER_USERNAME)}`,
+        openVeil(env),
+      );
     }
     return silence();
   }
 
   if (!member) return silence();
+  await refreshMenu(env, member, chatId, waitUntil);
 
   switch (cmd) {
     case "/start":
-      waitUntil(setCommands(env, chatId, member.role));
-      return say(chatId, `You are known here.\n\n${help(member.role)}`);
+      waitUntil(setMenu(env, chatId, member.role));
+      return say(chatId, "You are known here. Seek with /seek, or open veil.", openVeil(env));
 
-    case "/status": {
-      const s = await hub(env).getSession();
-      return say(chatId, label(s.state));
-    }
+    case "/help":
+      return say(chatId, helpText(member.role, env.COURIER_USERNAME), openVeil(env));
 
     case "/s":
     case "/seek":
@@ -179,6 +178,11 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
 
     case "/history":
       return history(env, member, chatId);
+
+    case "/status": {
+      const s = await hub(env).getSession();
+      return say(chatId, label(s.state));
+    }
 
     case "/sleep": {
       if (member.role !== "admin") return silence();
@@ -209,17 +213,19 @@ export async function handleUpdate(env: Env, update: TgUpdate, waitUntil: (p: Pr
       const buttons = all
         .filter((m) => m.role === "member")
         .map((m) => [{ text: `Revoke ${m.member_key.slice(0, 6)}`, callback_data: `rv:${m.member_key.slice(0, 16)}` }]);
-      return say(chatId, `Who may cross:\n${lines.join("\n")}`, buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
+      return say(chatId, `Who may cross\n\n${lines.join("\n")}`, buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
     }
 
     case "/leave": {
       if (member.role === "admin") return say(chatId, "The keeper cannot leave.");
       await M.revoke(env.DB, member.member_key.slice(0, 16));
-      waitUntil(clearCommands(env, chatId));
+      waitUntil(clearMenu(env, chatId));
       return say(chatId, "The veil falls back into place. You are forgotten.");
     }
 
     default:
-      return silence();
+      // Plain words seek; an unknown /command gets a pointer to /help.
+      if (!cmd.startsWith("/")) return seek(env, member, chatId, text);
+      return say(chatId, "Unknown command. /help lists what veil understands.");
   }
 }

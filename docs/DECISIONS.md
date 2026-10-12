@@ -61,3 +61,17 @@ Short records of decisions that shape the project. Newest at the bottom.
   - Remove the share path and the browser page.
   - Direct crossing offers **Save to device** (`downloadFile`), then tells the member how to attach it to a chat themselves (📎 → File).
 - **Consequence:** automatic delivery into the chat above 50 MB needs the local Bot API server, which needs an API ID (Route A). There is no other honest path.
+
+### D9 · More results, paged (2026-10-12)
+- **Context:**
+  - Searches returned few results. The agent sent `searchTimeout: 15000` (slskd reads seconds), kept 25 folders, and the bot showed 8 items with no paging.
+- **Decision:**
+  - The runner: 12 s timeout, 500 peers, partial snapshots every 5 s, up to 120 folders × 40 files per frame.
+  - The Hub keeps up to 400 ranked items per view.
+  - The bot pages by 8 (`◀ n / N ▶`); the app loads 30 at a time with *Show more*.
+  - Headers count both views.
+- **Consequence:** the app fills in while Soulseek answers. App taps carry `name|size`, so a re-rank between frames can't cross the wrong file.
+
+### D10 · One source for help (2026-10-12)
+- **Decision:** `worker/src/help.ts` defines every command and the guide text. It feeds the bot's `/help`, the per-chat menus (self-refreshing through `MENU_VERSION`) and the mini app's Guide.
+- **Consequence:** `test/help.test.ts` keeps [GUIDE.md](GUIDE.md) in step. Plain words in the chat search, and an unknown command points to `/help`.

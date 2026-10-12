@@ -6,7 +6,8 @@
 | 1 | Runner spike (riskiest unknowns) | A ✅ B ✅ · local Bot API pending api_id |
 | 2 | Front door: Worker, auth, D1, Hub DO, dispatch, bot webhook | ✅ done (2026-10-12) |
 | 3 | MVP loop: search → download → deliver, idle shutdown, history | ✅ done (2026-10-12) |
-| 4 | Mini app UI (Seek, Crossings, status bar) + direct crossing (D8) | built, live test pending (tunnel needs token permissions) |
+| 4 | Mini app UI (Seek, Crossings, status bar) + direct crossing (D8) | ✅ done (2026-10-12) |
+| 4.5 | Review: help, docs, UI/UX, search volume and paging | ✅ done (2026-10-12) |
 | 5 | Beyond (Explore feeds, weekly mix, feedback) | |
 | 6 | Wishlist, invites, AI query rewrite and filename cleanup | |
 
@@ -62,3 +63,25 @@
   - **Bot replies:** they used to ride on the webhook response, which gives no delivery result, and `/sleep`/`/status` once seemed silent. Replies now go through an explicit Bot API call, with the outcome logged. Every reply since is `ok: true`.
   - **Oversize taps:** a tap on a file above the upload limit used to download it and then fail. It's now refused up front.
 - **Still open:** files over 50 MB need the local Bot API server (waiting on `TG_API_ID`/`TG_API_HASH`).
+
+## Phase 4: results (2026-10-12)
+- **Mini app live:** Seek, Crossings, status strip, settings, in the dark spectral design (IM Fell English).
+- **Direct crossing:** the door is behind the named tunnel, byte-identical through Cloudflare.
+  - Web Share is impossible above 50 MB in Chromium (D8a), so large files go to the device.
+- **Fixes from the owner's tests:**
+  - initData in logged URLs: now single-use socket tickets.
+  - A stalled reader pinned the door: now a 60 s stall timeout and a 10 min busy cap.
+  - Clipped and overlapping buttons: a CSS class collision.
+  - Duplicate searches: now a visible wait and same-query lock.
+  - Automatic peer fallback added.
+
+## Phase 4.5: review (2026-10-12)
+- **Search volume** (D9): the slskd timeout unit bug was fixed, results stream in, and up to 400 per view are paged.
+- **Help** (D10):
+  - `/help`, plain-word search, self-refreshing menus.
+  - In the app: Guide and About sheets. GUIDE.md is checked by a test.
+- **UI:**
+  - Format chips, availability dots, expandable albums, *Show more*, recent searches.
+  - Crossings in "Now" and "Crossed" sections with relative times, and tap to seek again.
+  - A session sheet with Wake and Sleep for the keeper. Toasts moved clear of sheets.
+- **Docs:** README, ARCHITECTURE, DESIGN, RUNBOOK and PROTOCOL rewritten to match the system as built.

@@ -6,6 +6,7 @@ export interface Env {
   ASSETS: Fetcher;
 
   BOT_USERNAME: string;
+  COURIER_USERNAME: string;
   GH_REPO: string;
   GH_WORKFLOW: string;
   GH_REF: string;

@@ -16,7 +16,7 @@ import { dispatchRunner } from "./doorbell.ts";
 import type { Env } from "./env.ts";
 import type { Member } from "./members.ts";
 import { frame, type Envelope, type Fmt, type Folder, type JobMode, type JobStateMsg, type TrackMeta } from "./protocol.ts";
-import { basename, describe, dirname, peerScore, rank, render, type Item, type Prefs, type View } from "./rank.ts";
+import { basename, counts, describe, dirname, peerScore, rank, render, type Counts, type Item, type Prefs, type View } from "./rank.ts";
 import * as S from "./session.ts";
 import { tgCall } from "./telegram.ts";
 import { label } from "./words.ts";
@@ -44,6 +44,8 @@ interface SearchRec {
   prefs: Prefs;
   origin: Origin;
   status: "pending" | "sent" | "done";
+  partial?: boolean; // results so far, while Soulseek is still answering
+  page?: number; // bot results page
   msgId?: number;
   createdAt: number;
 }
@@ -82,19 +84,24 @@ export interface AppItem {
   kind: "t" | "a";
   name: string;
   detail: string;
+  ext: string;
   size: number;
   free: boolean;
   /** Above the chat upload limit: crosses directly (D8), or is unavailable if no tunnel this session. */
   direct: boolean;
+  /** Album contents (names and sizes only). */
+  files: { name: string; size: number }[];
 }
 
 export interface AppView {
-  status: "pending" | "sent" | "done" | "gone";
+  status: "pending" | "sent" | "partial" | "done" | "gone";
   query: string;
   fmt: Fmt;
   view: View;
   total: number;
+  counts: Counts;
   note: string | null;
+  offset: number;
   items: AppItem[];
 }
 
@@ -258,7 +265,7 @@ export class Hub extends DurableObject<Env> {
     return { sid, state: s.state };
   }
 
-  private async onResults(d: { search_id: string; responses?: number; files?: number; folders?: Folder[] }): Promise<void> {
+  private async onResults(d: { search_id: string; responses?: number; files?: number; folders?: Folder[]; partial?: boolean }): Promise<void> {
     const rec = await this.ctx.storage.get<SearchRec>(`s:${d.search_id}`);
     if (!rec) return;
     const folders = d.folders ?? [];
@@ -273,25 +280,36 @@ export class Hub extends DurableObject<Env> {
       users.forEach((u, i) => byHash.has(hashes[i]!) && scores.set(u, byHash.get(hashes[i]!)!));
     }
     await this.ctx.storage.put(`r:${rec.sid}`, { folders, scores: [...scores] } satisfies Results);
-    await this.env.DB.prepare("UPDATE searches SET result_count = ? WHERE id = ?").bind(d.files ?? 0, rec.sid).run();
+    const tally = counts(folders, rec.fmt, rec.prefs);
 
+    if (d.partial) {
+      // Results so far: the app shows them at once; the bot waits for the final set to keep the chat quiet.
+      await this.ctx.storage.put(`s:${rec.sid}`, { ...rec, partial: true });
+      await this.view(rec, rec.view, rec.fmt);
+      this.toMember(rec.member, "search.update", { sid: rec.sid, partial: true, counts: tally });
+      return;
+    }
+
+    await this.env.DB.prepare("UPDATE searches SET result_count = ? WHERE id = ?").bind(d.files ?? 0, rec.sid).run();
     let msgId: number | undefined;
-    const { rendered } = await this.view(rec, rec.view, rec.fmt); // also fixes the shown list for taps
+    const { rendered } = await this.view(rec, rec.view, rec.fmt, 0); // also fixes the shown list for taps
     if (rec.origin === "bot") {
       const sent = await this.tg("sendMessage", { chat_id: rec.chatId, ...rendered, link_preview_options: { is_disabled: true } });
       msgId = sent.result?.message_id;
     }
-    await this.ctx.storage.put(`s:${rec.sid}`, { ...rec, status: "done", msgId });
-    this.toMember(rec.member, "search.done", { sid: rec.sid });
+    await this.ctx.storage.put(`s:${rec.sid}`, { ...rec, status: "done", partial: false, page: 0, msgId });
+    this.toMember(rec.member, "search.done", { sid: rec.sid, counts: tally });
   }
 
-  /** Rank cached results for a view and remember what was shown, so a tap maps to the same item. */
-  private async view(rec: SearchRec, view: View, fmt: Fmt) {
+  /** Rank cached results for a view and remember the ranked list, so a tap maps to the same item. */
+  private async view(rec: SearchRec, view: View, fmt: Fmt, page = rec.page ?? 0) {
     const res = (await this.ctx.storage.get<Results>(`r:${rec.sid}`)) ?? { folders: [], scores: [] };
     const ranked = rank(res.folders, view, fmt, rec.prefs, new Map(res.scores));
     await this.ctx.storage.put(`v:${rec.sid}`, ranked.items);
     const s = await this.load();
-    return { ranked, rendered: render(rec.sid, rec.query, view, fmt, ranked, s.maxUploadMb ?? DEFAULT_UPLOAD_MB) };
+    const tally = counts(res.folders, fmt, rec.prefs);
+    const direct = Boolean(await this.directBase());
+    return { ranked, tally, rendered: render(rec.sid, rec.query, view, fmt, ranked, s.maxUploadMb ?? DEFAULT_UPLOAD_MB, page, tally, direct) };
   }
 
   /** Callback data `s:<sid>:<op>:<arg>` from a results message. */
@@ -301,11 +319,13 @@ export class Hub extends DurableObject<Env> {
     const rec = await this.ctx.storage.get<SearchRec>(`s:${sid}`);
     if (!rec || rec.member !== member.member_key) return { reply: answer("That search has faded. Seek again.") };
 
-    if (op === "f" || op === "v") {
+    if (op === "n") return { reply: answer("") };
+    if (op === "f" || op === "v" || op === "p") {
       const fmt = op === "f" ? (arg as Fmt) : rec.fmt;
       const view = op === "v" ? (arg as View) : rec.view;
-      await this.ctx.storage.put(`s:${sid}`, { ...rec, fmt, view });
-      const { rendered } = await this.view({ ...rec, fmt, view }, view, fmt);
+      const page = op === "p" ? Math.max(0, Number(arg) || 0) : 0;
+      await this.ctx.storage.put(`s:${sid}`, { ...rec, fmt, view, page });
+      const { rendered } = await this.view({ ...rec, fmt, view, page }, view, fmt, page);
       return {
         reply: JSON.stringify({ method: "editMessageText", chat_id: chatId, message_id: msgId, ...rendered, link_preview_options: { is_disabled: true } }),
         also: [answer("")],
@@ -321,25 +341,48 @@ export class Hub extends DurableObject<Env> {
 
   // ---------------------------------------------------------------- mini app
 
-  async appView(member: Member, sid: string, view?: View, fmt?: Fmt): Promise<AppView> {
+  async appView(member: Member, sid: string, view?: View, fmt?: Fmt, offset = 0, count = 30): Promise<AppView> {
     const rec = await this.ctx.storage.get<SearchRec>(`s:${sid}`);
-    if (!rec || rec.member !== member.member_key) return { status: "gone", query: "", fmt: "flac", view: "t", total: 0, note: null, items: [] };
+    const empty = { tracks: 0, albums: 0 };
+    if (!rec || rec.member !== member.member_key) return { status: "gone", query: "", fmt: "flac", view: "t", total: 0, counts: empty, note: null, offset: 0, items: [] };
     const v = view ?? rec.view;
     const f = fmt ?? rec.fmt;
     if (v !== rec.view || f !== rec.fmt) await this.ctx.storage.put(`s:${sid}`, { ...rec, view: v, fmt: f });
-    if (rec.status !== "done") return { status: rec.status, query: rec.query, fmt: f, view: v, total: 0, note: null, items: [] };
-    const { ranked } = await this.view(rec, v, f);
+    const status = rec.status === "done" ? "done" : rec.partial ? "partial" : rec.status;
+    if (status !== "done" && status !== "partial") return { status, query: rec.query, fmt: f, view: v, total: 0, counts: empty, note: null, offset: 0, items: [] };
+    const { ranked, tally } = await this.view(rec, v, f);
     const limit = await this.uploadLimit();
-    const items = ranked.items.map((it, i) => {
+    const from = Math.max(0, offset);
+    const items = ranked.items.slice(from, from + Math.min(Math.max(1, count), 60)).map((it, k) => {
       const big = it.kind === "t" ? it.size > limit : it.files.some((x) => x.size > limit);
-      return { i, kind: it.kind, ...describe(it), size: it.size, free: it.free, direct: big };
+      return {
+        i: from + k, kind: it.kind, ...describe(it), ext: it.kind === "t" ? it.ext : it.exts.join("/"),
+        size: it.size, free: it.free, direct: big,
+        files: it.kind === "a" ? it.files.slice(0, 80).map((x) => ({ name: basename(x.path), size: x.size })) : [],
+      };
     });
-    return { status: "done", query: rec.query, fmt: f, view: v, total: ranked.total, note: ranked.note ?? null, items };
+    return { status, query: rec.query, fmt: f, view: v, total: ranked.items.length, counts: tally, note: ranked.note ?? null, offset: from, items };
   }
 
-  async appCross(member: Member, chatId: number, sid: string, index: number): Promise<{ ok: boolean; error?: string; gid?: string }> {
+  /** Session details for the mini app's status sheet. */
+  async appSession(): Promise<{ state: S.SessionState; since: number; direct: boolean; maxUploadMb: number }> {
+    const s = await this.load();
+    return { state: s.state, since: s.since, direct: Boolean(await this.directBase()), maxUploadMb: s.maxUploadMb ?? DEFAULT_UPLOAD_MB };
+  }
+
+  /** `key` is "name|size" of the item the member saw; ranking can shift while partial results arrive. */
+  async appCross(member: Member, chatId: number, sid: string, index: number, key?: string): Promise<{ ok: boolean; error?: string; gid?: string }> {
     const rec = await this.ctx.storage.get<SearchRec>(`s:${sid}`);
     if (!rec || rec.member !== member.member_key) return { ok: false, error: "That search has faded. Seek again." };
+    if (key) {
+      const items = (await this.ctx.storage.get<Item[]>(`v:${sid}`)) ?? [];
+      const keyOf = (it: Item) => `${describe(it).name}|${it.size}`;
+      if (items[index] && keyOf(items[index]!) !== key) {
+        const found = items.findIndex((it) => keyOf(it) === key);
+        if (found < 0) return { ok: false, error: "That result has faded. Seek again." };
+        index = found;
+      }
+    }
     return this.crossIndex(member, chatId, rec, index, "app");
   }
 

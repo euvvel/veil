@@ -22,6 +22,7 @@
 
   "vars": {
     "BOT_USERNAME": "euveilbot",
+    "COURIER_USERNAME": "euveilcbot",
     "GH_REPO": "euvvel/veil",
     "GH_WORKFLOW": "runner.yml",
     "GH_REF": "main"

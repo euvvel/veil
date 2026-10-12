@@ -21,18 +21,36 @@ export interface Item {
   kind: View;
   name: string;
   detail: string;
+  ext: string;
   size: number;
   free: boolean;
   direct: boolean;
+  files: { name: string; size: number }[];
+}
+export interface Counts {
+  tracks: number;
+  albums: number;
 }
 export interface SearchView {
-  status: "pending" | "sent" | "done" | "gone";
+  status: "pending" | "sent" | "partial" | "done" | "gone";
   query: string;
   fmt: Fmt;
   view: View;
   total: number;
+  counts: Counts;
   note: string | null;
+  offset: number;
   items: Item[];
+}
+export interface Help {
+  guide: { title: string; body: string[] }[];
+  commands: { command: string; usage?: string; help: string; aliases?: string[] }[];
+}
+export interface SessionInfo {
+  state: SessionState;
+  since: number;
+  direct: boolean;
+  maxUploadMb: number;
 }
 export interface Job {
   id: string;
@@ -81,9 +99,14 @@ export const api = {
   me: () => call<Me>("GET", "/api/me"),
   prefs: (p: Partial<Prefs>) => call<Prefs>("PATCH", "/api/prefs", p),
   search: (query: string, fmt: Fmt) => call<{ sid: string; state: SessionState }>("POST", "/api/search", { query, fmt }),
-  view: (sid: string, view?: View, fmt?: Fmt) =>
-    call<SearchView>("GET", `/api/search/${sid}?${new URLSearchParams({ ...(view ? { view } : {}), ...(fmt ? { fmt } : {}) })}`),
-  cross: (sid: string, index: number) => call<{ ok: boolean; error?: string; gid?: string }>("POST", "/api/cross", { sid, index }),
+  view: (sid: string, view?: View, fmt?: Fmt, offset = 0, count = 30) =>
+    call<SearchView>("GET", `/api/search/${sid}?${new URLSearchParams({ ...(view ? { view } : {}), ...(fmt ? { fmt } : {}), offset: String(offset), count: String(count) })}`),
+  cross: (sid: string, index: number, key: string) => call<{ ok: boolean; error?: string; gid?: string }>("POST", "/api/cross", { sid, index, key }),
+  recent: () => call<string[]>("GET", "/api/recent"),
+  help: () => call<Help>("GET", "/api/help"),
+  session: () => call<SessionInfo>("GET", "/api/session"),
+  wake: () => call<{ ok: boolean }>("POST", "/api/session/wake"),
+  sleep: () => call<{ ok: boolean }>("POST", "/api/session/sleep"),
   crossings: () => call<{ active: Crossing[]; history: HistoryRow[] }>("GET", "/api/crossings"),
   direct: (gid: string) => call<DirectFile[]>("GET", `/api/direct/${gid}`),
   release: (job: string) => call<{ ok: boolean }>("POST", "/api/direct/release", { job }),
@@ -92,7 +115,8 @@ export const api = {
 
 export type HubEvent =
   | { type: "session.state"; data: { state: SessionState } }
-  | { type: "search.done"; data: { sid: string } }
+  | { type: "search.done"; data: { sid: string; counts: Counts } }
+  | { type: "search.update"; data: { sid: string; partial: boolean; counts: Counts } }
   | { type: "crossing"; data: Crossing };
 
 /** Live events from the Hub, reconnecting with backoff. Returns a stop function. */
@@ -130,5 +154,16 @@ export function live(onEvent: (e: HubEvent) => void): () => void {
     ws?.close();
   };
 }
+
+export const ago = (ms: number) => {
+  const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "yesterday" : `${d} days ago`;
+};
 
 export const mb = (b: number) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1024 ** 2))} MB`);

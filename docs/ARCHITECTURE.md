@@ -1,184 +1,168 @@
 # Architecture
 
-Status: **draft (Phase 0)**. Numbers referenced here come from [LIMITS.md](LIMITS.md). Decisions and their reasons are in [DECISIONS.md](DECISIONS.md).
+How veil is built today. Numbers come from [LIMITS.md](LIMITS.md); reasons from [DECISIONS.md](DECISIONS.md); the runner protocol from [protocol/PROTOCOL.md](../protocol/PROTOCOL.md).
 
 ## Overview
 
 ```
- Telegram ─────────────────────────────────────────────────────────────┐
-  ├─ bot "veil" (cloud Bot API, webhook) ── commands, mini app button  │
-  ├─ mini app (served by the Worker) ── initData ──┐                   │
-  └─ bot "courier" ◄── files (local Bot API server on the runner) ─────┼──┐
-                                                    ▼                  │  │
- Cloudflare                                                            │  │
-  ├─ Worker (TS, Hono)  auth · REST · webhook · dispatch · cron        │  │
-  ├─ Durable Object "Hub" (one instance, SQLite)  WS hub + job pump   │  │
-  ├─ D1  users · searches · jobs · tracks · events · suggestions …     │  │
-  └─ KV  feed caches (cron-written only)                               │  │
-                │ workflow_dispatch (REST)          ▲ outbound WS      │  │
-                ▼                                   │                  │  │
- GitHub Actions runner (public repo, concurrency group "veil-runner")  │  │
-  ├─ slskd (Soulseek client, REST on localhost)                        │  │
-  ├─ telegram-bot-api (local server, localhost)  ──────────────────────┘──┘
-  └─ veil-agent (Python) ── drives both, talks to the Hub
+ Telegram
+  ├─ bot "veil"     cloud Bot API · webhook → Worker · commands, results, status
+  ├─ mini app       served by the Worker · initData auth · live socket via tickets
+  └─ bot "courier"  sends files (≤ 50 MB) from the runner; never reads updates
+                │                                   ▲ sendAudio / sendDocument
+                ▼                                   │
+ Cloudflare     Worker (Hono) ── Hub (one Durable Object, SQLite) ── D1 (text only)
+                │   auth · API · webhook     session · search routing · job pump
+                │                            live state to the app · transient cache
+                │ workflow_dispatch                 ▲ outbound WebSocket
+                ▼                                   │
+ GitHub Actions runner (public repo, concurrency group "veil-runner", ≤ 5 h 30 m)
+  ├─ slskd (Docker, localhost)    Soulseek login, search, download
+  ├─ veil agent (Python)          drives slskd, talks to the Hub, delivers, deletes
+  └─ door + cloudflared           files over 50 MB, behind a named tunnel (D8)
 ```
 
-The runner makes **outbound** connections only, so nothing ever has to reach into it. Commands travel down the runner's own WebSocket to the Hub.
+The runner makes **outbound** connections only: its WebSocket to the Hub, Telegram, and the tunnel. Nothing reaches into it except through the door's one-time links.
 
 ## Components
 
-### Worker (front door)
-- **Auth (invite-only, no stored IDs):** see D7 in [DECISIONS.md](DECISIONS.md).
-  - Every mini app request carries `initData`. The Worker checks its HMAC as described in [LIMITS.md](LIMITS.md#telegram) and rejects it if `auth_date` is older than 24 h. It then computes `member_key = HMAC(MEMBER_HMAC_KEY, user.id)` and looks that up in `members`.
-  - **Enrolment:**
-    - `/start <code>` on the veil bot, or `start_param` in the mini app.
-    - `<code>` is either the admin claim code (derived from `CLAIM_SECRET`, usable only while `members` is empty) or a single-use invite (random, stored hashed, expires after 24 h).
-  - **Non-members get silence:** the webhook answers 200 and does nothing, and the API returns 404. The bot has no public description, and commands are set only per member chat (`BotCommandScopeChat`).
-  - Bot webhook calls must carry the `X-Telegram-Bot-Api-Secret-Token` header we set during `setWebhook`.
-- **Doorbell:** if the Hub reports `offline`, the Worker calls `workflow_dispatch` with `inputs: { session_id }`.
-  - It never passes secrets as inputs, because inputs show up on the public run page.
-  - It debounces: no new dispatch while the Hub is in `booting`. The workflow's `concurrency:` group is the second guard.
-- **CPU budget:** 10 ms per request. Handlers do I/O and small JSON only.
+### Worker (`worker/src/index.ts`)
 
-### Durable Object "Hub"
-There is a single instance, because there's a single runner.
-- Holds the runner's WebSocket and every open mini app WebSocket, using the Hibernation API if the Free plan allows it (⚠ see LIMITS).
-- Owns the **session state**: `offline | booting | ready | draining`. It also keeps a heartbeat deadline. If the runner goes quiet for 90 s, state falls back to `offline`.
-- **Job pump:** on `runner.hello`, it sends every D1 job in `pending`. New jobs while `ready` are pushed immediately.
-- Fans out job progress to the mini app sockets belonging to the job's owner. Progress messages are throttled on the runner side (at most 1 per job every 2 s).
+**Webhook `/tg/webhook`**
+- Checked against `X-Telegram-Bot-Api-Secret-Token`.
+- Replies are sent with an explicit Bot API call, and every outcome is logged (`{"at":"reply",…}`).
+- Strangers get silence: an empty 200, and nothing is sent.
 
-### D1 (text only)
-Draft schema. The real migrations land in Phase 2.
+**Mini app API `/api/*`**
+- Auth is `Authorization: tma <initData>`:
+  - HMAC checked, `auth_date` no older than 24 h.
+  - The user is then looked up as `HMAC(MEMBER_HMAC_KEY, user id)` in `members`.
+  - Anyone else gets a 404.
+- Routes:
 
-| Table | Purpose | Key columns |
+| Route | Does |
+|---|---|
+| `GET /api/me` | Role, preferences, session state |
+| `PATCH /api/prefs` | Default format, size limit, MP3 fallback |
+| `POST /api/search` | Starts a search |
+| `GET /api/search/:sid?view&fmt&offset&count` | Ranked results, paged (≤ 60 per call) |
+| `POST /api/cross {sid, index, key}` | Starts a crossing. `key` = name\|size guards against reranking while partial results arrive. |
+| `GET /api/crossings` | Active crossings and history |
+| `GET /api/direct/:gid`, `POST /api/direct/release` | Direct crossing (D8) |
+| `GET /api/recent` | Recent searches |
+| `GET /api/help` | The shared help text (`help.ts`) |
+| `GET /api/session` | Session state and details |
+| `POST /api/session/{wake,sleep}` | Wake or sleep the runner (keeper only) |
+| `POST /api/ticket` | Single-use 60 s ticket for the live socket |
+
+**Sockets**
+- `/hub/runner`: `Authorization: Bearer RUNNER_SECRET`.
+- `/hub/app?t=<ticket>`: the ticket comes from `/api/ticket`. initData never goes in a URL, because Cloudflare logs request URLs.
+
+### Hub (`worker/src/hub.ts`)
+
+One Durable Object instance. It uses the WebSocket Hibernation API, with sockets tagged `runner`, `app` and `m:<member_key>`.
+
+**Session**
+- States: `offline → booting → ready → draining`, via the pure state machine `session.ts`.
+- Boot timeout: 3 min. Heartbeat grace: 90 s.
+- **Doorbell:**
+  - `workflow_dispatch` with `return_run_details`.
+  - It never dispatches while booting.
+  - After the runner leaves with work still waiting, it re-rings automatically, at most twice in a row.
+
+**Searches**
+- Held while the runner boots, then sent on hello.
+- **Results:**
+  - Each `search.results` frame replaces the cached results.
+  - Partial frames update the app live. The bot sends one message when the search ends.
+  - Ranking (`rank.ts`): format filter and fallback, then free slot, peer reliability (`peer_stats`), queue length and speed. Identical files are deduplicated.
+  - Up to 400 items are kept per view. The bot shows 8 per page; the app requests 30.
+
+**Crossings** (one tap = a group of jobs)
+- Jobs are written to D1, and job state is relayed to the bot's status message and to the member's sockets.
+- A peer error moves the job to another peer with the same file, up to 4 sources in all.
+- **On delivery:**
+  - A `tracks` row is written from the file's tags.
+  - The job's `chat_id`, `peer` and `path` are erased.
+  - `peer_stats` is updated under an HMAC of the peer name.
+- **Direct crossing (D8, D8a):** files above the courier limit go to `mode=direct`. The runner offers them behind the door, and the Hub hands the one-time link only to the owner.
+
+**Transient storage**
+
+| Key | Holds | Removed |
 |---|---|---|
-| `members` | who may use veil | `member_key` PK (HMAC of Telegram id, never the raw id), `alias` (chosen by the member, optional), `role` (admin/member), `status` (active/revoked), `prefs` JSON |
-| `invites` | pending invites | `code_hash` PK, `created_by`, `expires_at`, `used_at` |
-| `searches` | history | `id`, `user_id`, `query`, `format_filter`, `result_count`, `created_at` |
-| `jobs` | download queue | `id`, `user_id`, `search_id`, `peer`, `path`, `size`, `format`, `bitrate`, `state`, `attempts`, `error`, `track_id`, timestamps |
-| `tracks` | what was delivered | `id`, `artist`, `title`, `album`, `year`, `format`, `mb_recording`, `mb_release` |
-| `events` | activity feedback | `user_id`, `type` (search/tap/download/skip/deliver), `ref`, `feed`, `created_at` |
-| `suggestions` | Explore items | `user_id`, `feed`, `mbid`, `kind`, `artist`, `title`, `year`, `reason`, `score`, `outcome` |
-| `wishlist` | wanted later | `user_id`, `query` or `mbid`, `format_filter`, `status`, `last_checked` |
-| `peer_stats` | source reliability | `peer_hash` (HMAC of username), `ok`, `fail`, `refused`, `avg_kbps`, `last_seen` |
+| `s:` `r:` `v:` | Search, raw results, ranked view | After 6 h |
+| `g:` `jg:` | Crossings | When finished |
+| `dj:` | Direct tokens | When finished |
+| `alt:` | Peers already tried | When finished |
+| `t:` | Socket tickets | After 60 s |
+| `wakers` | Chats waiting for `/wake` | At hello |
+| `direct` | This session's tunnel URL | When the runner leaves |
 
-All `user_id` columns hold the `member_key`, not a Telegram id.
+### Runner (`.github/workflows/runner.yml`, `runner/agent/`)
 
-**Leaves nothing behind:**
-- `jobs.chat_id` (the raw Telegram id courier delivers to) exists only while a job is in progress.
-- When a job reaches `delivered`, its `chat_id`, `peer` and `path` are set to NULL. Peer and path were only needed to re-request after a restart.
-- Peer usernames are kept only as HMACs in `peer_stats`.
+**Boot**
+1. Check out the repo, set up Python, install pinned dependencies.
+2. Start slskd (pinned by digest) with no shares.
+3. If tunnel secrets exist, start cloudflared 2026.9.3 (pinned by checksum) and wait for `/ready`.
+4. Start the agent.
 
-### KV
-- `feed:{user}:{feed}`: precomputed Explore lists, written by cron.
-- Nothing per-request or live goes in KV (1,000 writes/day).
+Dispatch to Soulseek login takes about 20 s.
 
-### Runner (GitHub Actions)
-- **Workflow:** `.github/workflows/runner.yml` with `on: workflow_dispatch` only, plus `concurrency: { group: veil-runner, cancel-in-progress: false }`.
-- **Boot order:**
-  1. Fetch slskd and telegram-bot-api, using cached binaries/images where possible.
-  2. Start both on localhost.
-  3. Start the agent, which opens the Hub WS (sends `RUNNER_SECRET` in the header) and sends `runner.hello`.
-- **The agent:**
-  - Turns `search.start` into slskd searches and streams grouped results back.
-  - Turns `job.start` into slskd downloads.
-  - When a file is complete, uploads it through the local Bot API (courier bot), then **deletes the file** and sends `job.delivered` with the Telegram message id.
-- **Shutdown:** idle for 20 min (configurable), or a hard cap of 5 h 30 m (GitHub kills jobs at 6 h).
-  1. Switch to `draining` and finish uploads already in progress.
-  2. Report unfinished jobs as `pending`.
-  3. Stop slskd gracefully so it logs out of Soulseek.
-  4. Send `runner.bye` and exit 0.
-- **Pluggable host:** the agent knows nothing about GitHub. Anything that can run `runner/start.sh` with the env vars set works as a host. When we move to a VPS, only the doorbell changes: the Worker would call the VPS instead of `workflow_dispatch`, or the VPS stays always-on.
+**Agent loop**
+- **Search:**
+  - slskd with `searchTimeout` 12 s (seconds, not milliseconds), `responseLimit` 500, `fileLimit` 25,000.
+  - Snapshots every 5 s while answers arrive.
+  - Each snapshot is grouped by folder and trimmed to ≤ 120 folders × 40 audio files, keeping the best FLAC and MP3 folders.
+- **Jobs:**
+  - One slskd batch per job, tagged with `externalId`.
+  - Polled every 2 s, with progress at most every 2 s. Queue position is refreshed every 30 s.
+  - **Done:** tags are read with mutagen, then courier sends the file (`sendAudio` for MP3/M4A, `sendDocument` otherwise) and the file is deleted.
+  - **Direct:** the file is offered behind the door instead (30 min, released by the member). The door drops readers stalled for 60 s, and a busy transfer can delay cleanup by at most 10 min.
+- **Drain:**
+  - Triggered by 20 min idle, the 5 h 30 m cap, or `/sleep`.
+  - Finish uploads, hand back unfinished jobs, settle direct files, log out of Soulseek (`DELETE /server`), close the door, say goodbye.
+- **Logs** are public, so they hold counts and states only. No queries, names, peers or ids.
 
-### Two bots
-- **veil** is the front door: it uses the cloud Bot API with a webhook to the Worker.
-- **courier** delivers files: it uses the local Bot API server on the runner.
+## Data (D1, text only)
 
-Why two: a bot has to `logOut` from the cloud API before running on a local server, and it can't log back into the cloud for 10 minutes afterwards. Keeping one bot on each side avoids that conflict. Each user taps **Start** on courier once so it's allowed to message them. 🧪 The spike checks whether a single bot could do both. If so, we simplify.
+| Table | Holds |
+|---|---|
+| `members` | `member_key` (HMAC), role, status, prefs (format, `max_mb`, fallback, menu version) |
+| `invites` | Hashed single-use codes, 24 h |
+| `searches` | Query, format, result count, time |
+| `jobs` | Crossing state, `group_id`, mode, attempts. `chat_id`, `peer` and `path` exist only while in flight. |
+| `tracks` | Artist, title, album, year, format, MusicBrainz ids (from tags) |
+| `events` | search, download, deliver (feeds Phase 5) |
+| `peer_stats` | `peer_hash` (HMAC), ok/fail/refused, average speed |
 
-## Format choice
+## Help, in one place
 
-You pick the format per search, with defaults saved in `users.prefs`:
+`worker/src/help.ts` holds every command and the guide text. It feeds:
+- the bot's `/help`
+- the per-chat command menus, which refresh themselves when the command set changes (`MENU_VERSION`)
+- the mini app's Guide (`/api/help`)
 
-| Pref | Default | Meaning |
-|---|---|---|
-| `format` | `flac` | `flac` · `mp3` · `any` (segmented toggle on the search screen) |
-| `max_mb` | `150` | Files above this are flagged and ranked lower, never hidden. |
-| `fallback` | `true` | If no FLAC under `max_mb` exists, rank MP3 320 above oversized FLAC. |
-
-How each format is delivered:
-- **MP3/M4A** go through `sendAudio`, so they appear in Telegram's music player.
-- **FLAC** goes through `sendDocument`. The Bot API only lists MP3/M4A for `sendAudio`. 🧪 We check how clients display FLAC documents.
-- Nothing is ever transcoded.
-
-## Search → delivery flow
-
-1. **Mini app → Worker:** `POST /api/search {q, format}`.
-   - The Worker writes a `searches` row.
-   - If the Hub is offline, the Worker dispatches the runner. The search waits in the Hub until `ready`.
-2. **Hub → runner:** `search.start`. The runner returns `search.results` in batches, grouped by peer and folder, each with size, bitrate, free slot, queue length, and a peer score from `peer_stats` (fetched by the Hub at hello).
-3. **Mini app → Worker:** `POST /api/jobs {search_id, peer, path…}` (a single file, or a whole folder for an album).
-   - The Worker writes `jobs` rows (`pending`).
-   - The Hub pushes them to the runner.
-4. **Runner → Hub:** `job.state` updates: `queued(n) → downloading(%) → uploading → delivered | failed(reason)`.
-5. **On delivered:** the Worker writes the `tracks` and `events` rows, nulls `peer`/`path`, and updates `peer_stats`.
-
-## Protocol (Hub ↔ runner, Hub ↔ app)
-
-These are our own messages, so we define them; nothing external is being guessed. The canonical source will be a JSON Schema file in `protocol/`, from which TS types and Python models are generated.
-
-Envelope: `{ "v": 1, "type": "<domain>.<verb>", "id": "<uuid>", "ts": <unix ms>, "data": { … } }`
-
-Planned types:
-- **Runner:**
-  - `runner.hello` / `runner.heartbeat` / `runner.bye`
-  - `session.state`
-  - `search.start` / `search.results` / `search.done`
-  - `job.start` / `job.cancel` / `job.state`
-- **App:** `app.subscribe`, `session.state`, `search.results`, `job.state`
-
-The fields are finalized in Phase 3.
-
-## Cron
-
-There are 5 crons per account. This is how they're allocated:
-
-| # | Schedule | Job |
-|---|---|---|
-| 1 | weekly (Mon 06:00 UTC) | weekly mix |
-| 2 | daily | Explore refresh (small batches) + wishlist check |
-| 3–5 | spare | |
-
-**Open question for Phase 5:** gathering Explore candidates means many rate-limited MusicBrainz/ListenBrainz calls, and that may not fit the Worker's CPU and subrequest limits (50 per invocation). The fallback is a separate scheduled `explore` workflow on the runner repo (no Soulseek login) that writes candidates back through the Worker. Workers AI ranking stays in the Worker.
+`test/help.test.ts` fails if [GUIDE.md](GUIDE.md) misses a command.
 
 ## Privacy
 
-- **Public repo logs:** the agent logs only counts and states (e.g. `search done: 143 results`). It never prints queries, filenames, peer names, or Telegram ids. All three binaries run with their stdout piped through a filter or silenced.
-- **No secrets as workflow inputs.** Secrets live only in GitHub Secrets and in Worker secrets.
-- **Who can trigger the runner:** only `workflow_dispatch`. No `pull_request` triggers, so forks can't run it or reach secrets.
-- **Storage:** D1 holds text only. No audio, no cover art (covers are hotlinked from Cover Art Archive by MBID).
+- **Stored:** text only. No audio, no cover art, no Telegram ids (members are HMACs).
+- **In flight only:** peer names, paths and chat ids, erased on delivery.
+- **Public repo:** logs carry counts only. Secrets never go in workflow inputs.
+- **Hidden values:** the custom domains (app and door) live only in secrets.
+- **Worker logs:** contain command names and reply outcomes, never ids or search words. The mini app socket uses single-use tickets, so no login data appears in logged URLs.
 
 ## Secrets
 
 | Where | Name | Purpose |
 |---|---|---|
 | GitHub | `SLSK_USERNAME`, `SLSK_PASSWORD` | Soulseek account |
-| GitHub | `COURIER_BOT_TOKEN`, `TG_API_ID`, `TG_API_HASH` | Local Bot API server and delivery |
-| GitHub + Worker | `RUNNER_SECRET` | Runner ↔ Hub auth |
+| GitHub | `COURIER_BOT_TOKEN` | Delivery |
+| GitHub | `HUB_URL`, `RUNNER_SECRET` | Runner ↔ Hub |
+| GitHub | `TUNNEL_TOKEN`, `DIRECT_BASE` | Door (D8). Optional. |
 | Worker | `VEIL_BOT_TOKEN`, `WEBHOOK_SECRET` | Front bot, webhook check |
-| Worker | `GH_DISPATCH_TOKEN` | Fine-grained PAT, this repo only, Actions: write (⚠) |
-| Worker | `PEER_HMAC_KEY` | Hashing peer names |
-| Worker | `MEMBER_HMAC_KEY` | Hashing Telegram ids into `member_key` |
-| Worker | `CLAIM_SECRET` | Admin claim code (one-time, while no members exist) |
-
-## Repo layout (target)
-
-```
-veil/
-  docs/                 VEIL, ARCHITECTURE, DESIGN, LIMITS, DECISIONS, RUNBOOK
-  protocol/             messages.schema.json (+ generated types)
-  worker/               Cloudflare Worker + Hub DO + migrations (TS)
-  app/                  mini app (Vite + Preact), built into worker assets
-  runner/               veil-agent (Python), start.sh
-  .github/workflows/    runner.yml, spike.yml
-```
+| Worker | `RUNNER_SECRET`, `GH_DISPATCH_TOKEN` | Runner auth, doorbell (PAT: this repo, Actions write) |
+| Worker | `MEMBER_HMAC_KEY`, `PEER_HMAC_KEY`, `CLAIM_SECRET` | Fingerprints and the one-time claim |
+| Worker | `APP_URL` | Mini app origin (menu and "Receive it" buttons) |

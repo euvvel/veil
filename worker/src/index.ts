@@ -6,6 +6,7 @@ import { handleUpdate, type TgUpdate } from "./bot.ts";
 import { safeEqual } from "./crypto.ts";
 import { hub, type Env } from "./env.ts";
 import { validateInitData } from "./initdata.ts";
+import { COMMANDS, GUIDE } from "./help.ts";
 import { activeMember, memberKey, type Member } from "./members.ts";
 import type { Fmt } from "./protocol.ts";
 import type { View } from "./rank.ts";
@@ -102,14 +103,47 @@ app.post("/api/search", async (c) => {
 });
 
 app.get("/api/search/:sid", async (c) => {
-  const v = await hub(c.env).appView(c.get("member"), c.req.param("sid"), viewOf(c.req.query("view")), fmtOf(c.req.query("fmt")));
-  return c.json(v);
+  const offset = Number(c.req.query("offset")) || 0;
+  const count = Number(c.req.query("count")) || 30;
+  return c.json(await hub(c.env).appView(c.get("member"), c.req.param("sid"), viewOf(c.req.query("view")), fmtOf(c.req.query("fmt")), offset, count));
 });
 
 app.post("/api/cross", async (c) => {
-  const body = await c.req.json<{ sid?: string; index?: number }>();
+  const body = await c.req.json<{ sid?: string; index?: number; key?: string }>();
   if (typeof body.sid !== "string" || typeof body.index !== "number") return c.json({ ok: false, error: "bad request" }, 400);
-  return c.json(await hub(c.env).appCross(c.get("member"), c.get("userId"), body.sid, body.index));
+  const key = typeof body.key === "string" ? body.key.slice(0, 400) : undefined;
+  return c.json(await hub(c.env).appCross(c.get("member"), c.get("userId"), body.sid, body.index, key));
+});
+
+/** Recent distinct searches, for the Seek screen's chips. */
+app.get("/api/recent", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT query, MAX(created_at) AS at FROM searches WHERE user_id = ? GROUP BY lower(query) ORDER BY at DESC LIMIT 8",
+  ).bind(c.get("member").member_key).all<{ query: string }>();
+  return c.json(results.map((r) => r.query));
+});
+
+/** The same help the bot gives (src/help.ts), for the Guide sheet. */
+app.get("/api/help", (c) => {
+  const role = c.get("member").role;
+  return c.json({
+    guide: GUIDE.map((s) => ({ ...s, body: s.body.map((b) => b.replaceAll("{courier}", c.env.COURIER_USERNAME)) })),
+    commands: COMMANDS.filter((x) => x.roles.includes(role)).map(({ command, usage, help, aliases }) => ({ command, usage, help, aliases })),
+  });
+});
+
+app.get("/api/session", async (c) => c.json(await hub(c.env).appSession()));
+
+app.post("/api/session/:op", async (c) => {
+  const m = c.get("member");
+  if (m.role !== "admin") return notFound();
+  const op = c.req.param("op");
+  if (op === "wake") {
+    const r = await hub(c.env).wake(c.get("userId"));
+    return c.json({ ok: r.dispatched || r.session.state !== "offline", state: r.session.state });
+  }
+  if (op === "sleep") return c.json({ ok: await hub(c.env).sleep() });
+  return notFound();
 });
 
 app.get("/api/crossings", async (c) => {

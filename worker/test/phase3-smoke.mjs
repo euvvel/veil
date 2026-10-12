@@ -73,12 +73,25 @@ await sleep(500);
 
 // --- toggles
 r = await tap(`s:${sid}:f:mp3`);
-assert.equal(r.method, "editMessageText"); assert.match(r.text, /MP3 · tracks · 1 of 1/); ok("format toggle → MP3 view");
+assert.equal(r.method, "editMessageText"); assert.match(r.text, /MP3 · tracks · 1 tracks · 0 albums/); ok("format toggle → MP3 view with counts");
 r = await tap(`s:${sid}:v:a`);
 assert.match(r.text, /albums/); ok("view toggle → albums");
 r = await tap(`s:${sid}:v:t`);
 r = await tap(`s:${sid}:f:flac`);
-assert.match(r.text, /FLAC · tracks · 2 of 2/); assert.match(r.text, /1\. 01 1 Ghosts I\.flac/); ok("back to FLAC tracks");
+assert.match(r.text, /FLAC · tracks · 2 tracks · 1 albums/); assert.match(r.text, /1\. 01 1 Ghosts I\.flac/); ok("back to FLAC tracks");
+
+// --- help and plain words
+r = await msg("/help");
+assert.match(r.text, /COMMANDS/); assert.match(r.text, /\/seek \[flac\|mp3\|any\] words/); assert.match(r.text, /\/invite/); ok("/help lists the keeper's commands");
+r = await msg("/nonsense");
+assert.match(r.text, /\/help/); ok("unknown command → pointer to /help");
+r = await msg("aphex twin windowlicker");
+assert.match(r.text, /Listening beyond/);
+const plain = await run1.next("search.start");
+assert.equal(plain.data.query, "aphex twin windowlicker"); ok("plain words seek");
+run1.send("search.results", { search_id: plain.data.search_id, responses: 0, files: 0, folders: [], partial: false }); // answered, so it is not re-sent later
+r = await tap(`s:${sid}:n:0`);
+assert.equal(r.method, "answerCallbackQuery"); ok("page counter button is inert");
 
 // --- download and deliver
 r = await tap(`s:${sid}:d:0`);

@@ -16,7 +16,7 @@ Our own protocol: JSON text frames over the runner's WebSocket (`/hub/runner`, `
 |---|---|---|
 | `runner.hello` | `run_id`, `session_id`, `agent`, `active_jobs: string[]`, `max_upload_mb`, `direct_base` (tunnel URL, if any) | on every (re)connect |
 | `runner.heartbeat` | `active_jobs: number`, `idle_s` | every 30 s |
-| `search.results` | `search_id`, `responses`, `files`, `folders: Folder[]` | search finished (one message, pre-trimmed) |
+| `search.results` | `search_id`, `responses`, `files`, `folders: Folder[]`, `partial` | about every 5 s while answers arrive (`partial: true`), then once when the search ends (`partial: false`). Each frame replaces the previous one. |
 | `job.state` | `job_id`, `state`, plus `pct`, `place`, `kbps`, `error`, `track` | state change, or progress at most every 2 s |
 | `session.state` | `state: "draining"` | idle timeout, hard cap, or `session.drain` |
 | `runner.bye` | `reason` | last message before exit |
@@ -26,7 +26,7 @@ Our own protocol: JSON text frames over the runner's WebSocket (`/hub/runner`, `
 { "u": username, "d": directory, "f": hasFreeUploadSlot, "q": queueLength, "s": uploadSpeed,
   "files": [[path, size, ext, bitRate|null, bitDepth|null, sampleRate|null, lengthSec|null], …] }
 ```
-The runner sends at most 25 folders × 25 audio files, chosen so that both FLAC and MP3 folders are present.
+The runner sends at most 120 folders × 40 audio files (well under the Hub's 32 MiB frame and 2 MB storage limits), keeping the best FLAC folders, the best MP3 folders, then the rest by availability.
 
 Job `state` values:
 
@@ -57,3 +57,14 @@ Job `state` values:
 - **Peer names, paths and chat ids appear only in these frames and in transient Hub storage.** D1 erases them on delivery (see ARCHITECTURE.md).
 - **`job.start` is idempotent:** the runner ignores a `job_id` it already has.
 - **Recovering jobs on hello:** the Hub re-sends every non-terminal D1 job that isn't in `active_jobs`, adding 1 to `attempts`. After 3 openings, the job is failed with `gave_up`.
+
+## Hub → mini app (member socket)
+
+Each socket is tagged with its member; events about a member's searches and crossings go only to that member.
+
+| type | data |
+|---|---|
+| `session.state` | `state`, `label` (to everyone) |
+| `search.update` | `sid`, `partial: true`, `counts {tracks, albums}`: more results arrived |
+| `search.done` | `sid`, `counts`: the search ended |
+| `crossing` | `gid`, `name`, `text`, `jobs [{id, state, pct, place, error}]`, `done` |

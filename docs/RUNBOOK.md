@@ -48,3 +48,22 @@ Query them with `POST /accounts/{id}/workers/observability/telemetry/query`:
   "parameters": { "filters": [{ "key": "$metadata.service", "operation": "eq", "type": "string", "value": "veil" }] } }
 ```
 The console output is in each event's `source` field.
+
+## Deploying a change
+
+1. **Unit tests:** `cd worker && npm test`. This covers initData, the session machine, ranking and paging, and help vs GUIDE.md.
+2. **Typecheck:** `cd app && npx tsc --noEmit` and `cd worker && npx tsc --noEmit`.
+3. **End-to-end tests** against a fresh local Worker:
+   ```sh
+   cd worker && rm -rf .wrangler/state && npx wrangler d1 migrations apply veil --local
+   npx wrangler dev --port 8787 &          # .dev.vars holds test secrets and REPLY_MODE=webhook
+   node --experimental-strip-types test/local-smoke.mjs  http://127.0.0.1:8787   # front door, auth, Hub
+   node --experimental-strip-types test/phase3-smoke.mjs http://127.0.0.1:8787   # search, paging, crossings
+   node --experimental-strip-types test/phase4-smoke.mjs http://127.0.0.1:8787   # app API, direct crossing, fallback
+   ```
+   Each suite needs a fresh D1 (it claims the keeper).
+4. **Build the app:** `cd app && npm run build`, which writes `worker/public/`.
+5. **Migrate and deploy:** `cd worker && npx wrangler d1 migrations apply veil --remote && npx wrangler deploy`.
+6. **Push.** The runner checks out `main` each time it starts, so agent changes take effect on the next wake.
+
+Member command menus refresh themselves after a deploy that changes `help.ts` (`MENU_VERSION`).

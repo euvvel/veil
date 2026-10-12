@@ -22,6 +22,9 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | Durable Objects on Free | Yes, **SQLite-backed only** | ✅ | developers.cloudflare.com/durable-objects/platform/pricing |
 | DO requests | 100,000 / day; incoming WS messages billed 20:1; outgoing messages free | ✅ | same |
 | DO duration | 13,000 GB-s / day | ✅ | same |
+| DO WebSocket message (received) | 32 MiB | ✅ | developers.cloudflare.com/durable-objects/platform/limits |
+| DO storage (SQLite, KV API) | key + value ≤ 2 MB | ✅ | same |
+| DO CPU per invocation | 30 s default | ✅ | same |
 | DO WebSocket Hibernation on Free | `acceptWebSocket` + tags work on Free (live 2026-10-12); actual sleep not yet observed | ✅ API / ⚠ billing | live deploy |
 | `*.workers.dev` on this account | every Worker answers **1101**, even a hello world; no CF incident | ✅ live (workaround: custom domain) | 2026-10-11 |
 | Workers AI | 10,000 Neurons / day, no paid overage on Free | ✅ | developers.cloudflare.com/workers-ai/platform/pricing |
@@ -81,6 +84,8 @@ Legend: ✅ confirmed from official docs · ⚠ unverified, check before relying
 | No shares | leave `SLSKD_SHARED_DIR` unset; `SLSKD_SLSK_NO_DNET` allowed when sharing nothing | ✅ | same |
 | REST API (v0.26.1) | Auth header `X-API-Key`. Spec at `/swagger/v0/swagger.json` (needs `SLSKD_SWAGGER=true`). `POST /api/v0/searches` (`SearchRequest`: searchText, searchTimeout, filterResponses, maximumPeerQueueLength, minimumPeerUploadSpeed, responseLimit, fileLimit…), `GET /api/v0/searches/{id}/responses`, `POST /api/v0/transfers/downloads/{username}` (array of `QueueDownloadRequest`), `POST /api/v0/transfers/downloads/batches` (has `externalId`), `GET /api/v0/transfers/downloads/{username}/{id}` (+`/position`), `DELETE /api/v0/server` (disconnect). TransferStates: None, Requested, Queued, Initializing, InProgress, Completed, Succeeded, Cancelled, TimedOut, Errored, Rejected, Aborted, Locally, Remotely. | ✅ | full spec saved in `runner/reference/slskd-0.26.1-openapi.json` (pulled from a local run, 2026-10-11) |
 | Docker image | `slskd/slskd`, pinned by digest. API ready ~1 s after start locally (no login) | ✅ | local run |
+| `SearchRequest` units and defaults | `searchTimeout` in **seconds** (default 15, min 5), `responseLimit` default 100, `fileLimit` default 10,000. veil sends 12 s / 500 / 25,000. Before 2026-10-12 it sent `15000`, read as seconds. | ✅ | OpenAPI descriptions in `runner/reference/slskd-0.26.1-openapi.json` |
+| Partial responses while a search runs | `GET /searches/{id}/responses` during the search | 🧪 first live run | |
 
 ## MusicBrainz / ListenBrainz
 

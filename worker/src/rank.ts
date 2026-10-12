@@ -3,7 +3,8 @@
 import type { Fmt, Folder } from "./protocol.ts";
 
 export const AUDIO = new Set(["flac", "mp3", "m4a", "ogg", "opus", "wav", "aac", "alac"]);
-export const PAGE = 8;
+export const PAGE = 8; // bot page size
+export const MAX_ITEMS = 400; // ranked items kept per view (bounded Hub storage)
 
 export interface Prefs {
   format: Fmt;
@@ -104,7 +105,7 @@ export function rank(folders: Folder[], view: View, fmt: Fmt, prefs: Prefs, scor
       });
     }
     const sorted = dedupe(albums.sort(compare), (a) => `${dirname(a.d + "/x")}|${a.files.length}|${a.size}`);
-    return { items: sorted.slice(0, PAGE), total: sorted.length };
+    return { items: sorted.slice(0, MAX_ITEMS), total: sorted.length };
   }
 
   let tracks = tracksFor(folders, fmt, maxBytes, scores).sort(compare);
@@ -119,7 +120,7 @@ export function rank(folders: Folder[], view: View, fmt: Fmt, prefs: Prefs, scor
   }
 
   const unique = dedupe(tracks, (t) => `${basename(t.path).toLowerCase()}|${t.size}`);
-  return { items: unique.slice(0, PAGE), total: unique.length, note };
+  return { items: unique.slice(0, MAX_ITEMS), total: unique.length, note };
 }
 
 // ---- rendering (plain text, no parse_mode, so nothing needs escaping) ----
@@ -143,16 +144,17 @@ export function describe(i: Item): { name: string; detail: string } {
   };
 }
 
-export function line(i: Item, n: number, maxUploadMb: number): string {
+export function line(i: Item, n: number, maxUploadMb: number, direct = false): string {
   const slot = i.free ? "free" : `queue ${i.q}`;
-  const tooBig = (size: number) => size > maxUploadMb * 1024 * 1024;
+  const big = (size: number) => size > maxUploadMb * 1024 * 1024;
+  const over = direct ? "direct" : "too large for now";
   if (i.kind === "t") {
     const bits = [quality(i), mb(i.size), mmss(i.len), slot].filter(Boolean).join(" · ");
-    return `${n}. ${basename(i.path)}\n    ${bits}${tooBig(i.size) ? " · too large for now" : ""}`;
+    return `${n}. ${basename(i.path)}\n    ${bits}${big(i.size) ? ` · ${over}` : ""}`;
   }
-  const big = i.files.filter((f) => tooBig(f.size)).length;
+  const many = i.files.filter((f) => big(f.size)).length;
   const bits = [`${i.files.length} files`, i.exts.map((e) => e.toUpperCase()).join("/"), mb(i.size), slot].join(" · ");
-  return `${n}. ${dirname(i.d + "/x")}\n    ${bits}${big ? ` · ${big} too large for now` : ""}`;
+  return `${n}. ${dirname(i.d + "/x")}\n    ${bits}${many ? ` · ${many} ${over}` : ""}`;
 }
 
 export interface Rendered {
@@ -160,15 +162,37 @@ export interface Rendered {
   reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] };
 }
 
-export function render(sid: string, query: string, view: View, fmt: Fmt, r: Ranked, maxUploadMb: number): Rendered {
-  const head = `Seek · ${query}\n${FMT_LABEL[fmt]} · ${view === "t" ? "tracks" : "albums"} · ${r.items.length} of ${r.total}`;
-  const body = r.items.length
-    ? r.items.map((i, n) => line(i, n + 1, maxUploadMb)).join("\n")
+export interface Counts {
+  tracks: number;
+  albums: number;
+}
+
+export const pages = (total: number, size = PAGE) => Math.max(1, Math.ceil(total / size));
+
+export function render(
+  sid: string, query: string, view: View, fmt: Fmt, r: Ranked, maxUploadMb: number,
+  page = 0, counts?: Counts, direct = false,
+): Rendered {
+  const shown = r.items.length;
+  const last = pages(shown) - 1;
+  const p = Math.min(Math.max(0, page), last);
+  const slice = r.items.slice(p * PAGE, p * PAGE + PAGE);
+  const tally = counts ? `${counts.tracks} tracks · ${counts.albums} albums` : `${r.total} ${view === "t" ? "tracks" : "albums"}`;
+  const head = `Seek · ${query}\n${FMT_LABEL[fmt]} · ${view === "t" ? "tracks" : "albums"} · ${tally}`;
+  const body = slice.length
+    ? slice.map((i, n) => line(i, p * PAGE + n + 1, maxUploadMb, direct)).join("\n")
     : "Nothing answered from beyond.";
   const text = [head, r.note, "", body].filter((x) => x !== undefined).join("\n");
 
-  const nums = r.items.map((_, n) => ({ text: `${n + 1}`, callback_data: `s:${sid}:d:${n}` }));
+  const nums = slice.map((_, n) => ({ text: `${p * PAGE + n + 1}`, callback_data: `s:${sid}:d:${p * PAGE + n}` }));
   const rows = [nums.slice(0, 4), nums.slice(4, 8)].filter((row) => row.length);
+  if (last > 0) {
+    rows.push([
+      { text: p > 0 ? "◀" : "·", callback_data: p > 0 ? `s:${sid}:p:${p - 1}` : `s:${sid}:n:0` },
+      { text: `${p + 1} / ${last + 1}`, callback_data: `s:${sid}:n:0` },
+      { text: p < last ? "▶" : "·", callback_data: p < last ? `s:${sid}:p:${p + 1}` : `s:${sid}:n:0` },
+    ]);
+  }
   const tick = (on: boolean, label: string) => (on ? `· ${label} ·` : label);
   rows.push((["flac", "mp3", "any"] as Fmt[]).map((f) => ({ text: tick(f === fmt, FMT_LABEL[f]), callback_data: `s:${sid}:f:${f}` })));
   rows.push([
@@ -176,4 +200,9 @@ export function render(sid: string, query: string, view: View, fmt: Fmt, r: Rank
     { text: tick(view === "a", "Albums"), callback_data: `s:${sid}:v:a` },
   ]);
   return { text, reply_markup: { inline_keyboard: rows } };
+}
+
+/** Both views' sizes for a format, for headers like "312 tracks · 41 albums". */
+export function counts(folders: Folder[], fmt: Fmt, prefs: Prefs): Counts {
+  return { tracks: rank(folders, "t", fmt, prefs, new Map()).total, albums: rank(folders, "a", fmt, prefs, new Map()).total };
 }

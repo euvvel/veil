@@ -23,21 +23,33 @@ class Slskd:
             await asyncio.sleep(1)
         return False
 
-    async def search(self, text: str, timeout_ms: int = 15000) -> tuple[list[dict], str]:
+    async def search(self, text: str, timeout_s: int = 12, response_limit: int = 500, file_limit: int = 25000,
+                     snapshot_every_s: float = 5):
+        """Run a search and yield (responses, state, done) snapshots while it runs, then once more at the end.
+
+        SearchRequest units (runner/reference/slskd-0.26.1-openapi.json): searchTimeout is in seconds
+        (default 15, minimum 5); responseLimit defaults to 100 and fileLimit to 10,000.
+        """
         sid = str(uuid.uuid4())
-        body = {"id": sid, "searchText": text, "searchTimeout": timeout_ms, "filterResponses": True}
+        body = {"id": sid, "searchText": text, "searchTimeout": timeout_s, "responseLimit": response_limit,
+                "fileLimit": file_limit, "filterResponses": True}
         (await self.c.post("/searches", json=body)).raise_for_status()
-        state = ""
-        deadline = time.monotonic() + timeout_ms / 1000 + 30
-        while time.monotonic() < deadline:
-            s = (await self.c.get(f"/searches/{sid}")).json()
-            state = s.get("state") or ""
-            if s.get("endedAt"):
-                break
-            await asyncio.sleep(1)
-        responses = (await self.c.get(f"/searches/{sid}/responses")).json()
-        await self.c.delete(f"/searches/{sid}")
-        return responses, state
+        state, last_snap, seen = "", time.monotonic(), 0
+        deadline = time.monotonic() + timeout_s + 20
+        try:
+            while time.monotonic() < deadline:
+                s = (await self.c.get(f"/searches/{sid}")).json()
+                state = s.get("state") or ""
+                if s.get("endedAt"):
+                    break
+                if time.monotonic() - last_snap >= snapshot_every_s and (s.get("responseCount") or 0) > seen:
+                    last_snap = time.monotonic()
+                    seen = s.get("responseCount") or 0
+                    yield (await self.c.get(f"/searches/{sid}/responses")).json(), state, False
+                await asyncio.sleep(1)
+            yield (await self.c.get(f"/searches/{sid}/responses")).json(), state, True
+        finally:
+            await self.c.delete(f"/searches/{sid}")
 
     async def enqueue(self, job_id: str, username: str, path: str, size: int) -> tuple[str | None, int]:
         batch_id = str(uuid.uuid4())

@@ -24,7 +24,7 @@ POLL_S = 2
 PROGRESS_EVERY_S = 2
 POSITION_EVERY_S = 30
 HEARTBEAT_S = 30
-MAX_FOLDERS, MAX_FILES = 25, 25
+MAX_FOLDERS, MAX_FILES = 120, 40  # ≈ 0.5–1 MB per frame; the Hub accepts 32 MiB frames and 2 MB values
 AWAIT_S = 30 * 60  # how long a direct file waits at the veil's edge
 RELEASE_GRACE_S = 90  # after release, give a just-accepted download time to start
 BUSY_LIMIT_S = 10 * 60  # a transfer in progress may delay cleanup, but never longer than this
@@ -73,7 +73,8 @@ def build_folders(responses: list[dict]) -> list[dict]:
     ranked = sorted(groups.values(), key=lambda g: (not g["f"], g["q"], -g["s"]))
     has = lambda g, e: any(x[2] == e for x in g["files"])  # noqa: E731
     picked: list[dict] = []
-    for subset in ([g for g in ranked if has(g, "flac")][:13], [g for g in ranked if has(g, "mp3")][:13], ranked[:6]):
+    # Keep both worlds: the best FLAC folders, the best MP3 folders, then whatever else ranks highest.
+    for subset in ([g for g in ranked if has(g, "flac")][:55], [g for g in ranked if has(g, "mp3")][:45], ranked):
         for g in subset:
             if g not in picked and len(picked) < MAX_FOLDERS:
                 picked.append(g)
@@ -169,15 +170,17 @@ class Agent:
     async def run_search(self, search_id: str, query: str) -> None:
         self.searching += 1
         self.touch()
+        last: dict = {"responses": 0, "files": 0, "folders": []}
         try:
-            responses, state = await self.slskd.search(query)
-            folders = build_folders(responses)
-            files = sum(len(r.get("files") or []) for r in responses)
-            self.link.send("search.results", search_id=search_id, responses=len(responses), files=files, folders=folders)
-            log(f"search done: {len(responses)} peers, {files} files, {len(folders)} folders sent ({state})")
+            async for responses, state, done in self.slskd.search(query):
+                files = sum(len(r.get("files") or []) for r in responses)
+                last = {"responses": len(responses), "files": files, "folders": build_folders(responses)}
+                self.link.send("search.results", search_id=search_id, partial=not done, **last)
+                self.touch()
+            log(f"search done: {last['responses']} peers, {last['files']} files, {len(last['folders'])} folders sent ({state})")
         except Exception as e:  # noqa: BLE001 - a failed search must not kill the agent
             log(f"search failed: {type(e).__name__}")
-            self.link.send("search.results", search_id=search_id, responses=0, files=0, folders=[])
+            self.link.send("search.results", search_id=search_id, partial=False, **last)  # keep what already arrived
         finally:
             self.searching -= 1
             self.touch()
